@@ -174,9 +174,6 @@ TEXT_AREA_BOTTOM = 1150
 SIGNATURE_TOP = 1070   # 署名区：to TA / 落款 用户
 FOOTER_AREA_TOP = 1150
 FOOTER_QR_SIZE = 88
-# 专属画像海报：顶部画像与画布尺寸
-PORTRAIT_CARD_WIDTH = 1820
-PORTRAIT_IMAGE_HEIGHT = 1024
 CARD_FOOTER_LINE1 = "【Astrose-把你们的故事写在星辰里】"
 CARD_FOOTER_QR = "wechat_public_qr.png"   # 公众号二维码，放 assets 目录
 CARD_FOOTER_PROMPT = "【回复：情人节，给你的TA写信/回信】"
@@ -734,11 +731,10 @@ def create_valentine_card(
     my_name: str = "",
 ) -> BytesIO:
     """
-    合成专属画像海报（带头像+小诗）。
-    画布宽度 1820，画像区 1820×1024；高度动态：画像区 + 文字区(按行数) + 署名区(100) + 底部二维码/引流区。
+    合成专属画像海报（带头像+小诗）。画布宽 800，画像区 16:9（800×450）；高度动态。
     """
-    card_width = PORTRAIT_CARD_WIDTH
-    image_area_height = PORTRAIT_IMAGE_HEIGHT  # 1820×1024
+    card_width = CARD_WIDTH
+    image_area_height = CARD_WIDTH * 9 // 16  # 16:9
 
     # 1. 先算诗歌需要多少高度
     poem_font = _find_chinese_font(POEM_FONT_SIZE)
@@ -779,10 +775,10 @@ def create_valentine_card(
         b = int(255 - progress * 10)
         draw.line([(0, y), (card_width, y)], fill=(r, g, b))
 
-    # 放置画像（1820×1024）
+    # 放置画像（16:9，直接缩放到 800×450，不裁剪）
     try:
         portrait = _download_image(image_url)
-        portrait = _crop_center(portrait, card_width, image_area_height)
+        portrait = portrait.resize((card_width, image_area_height), Image.Resampling.LANCZOS)
         canvas.paste(portrait, (0, 0))
     except Exception:
         placeholder_draw = ImageDraw.Draw(canvas)
