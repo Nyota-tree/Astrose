@@ -737,8 +737,8 @@ def create_valentine_card(
     for y in range(text_area_top, total_height):
         progress = (y - text_area_top) / max(1, total_height - text_area_top)
         r = 255
-        g = int(255 - progress * 28)
-        b = int(255 - progress * 28)
+        g = int(255 - progress * 42)
+        b = int(255 - progress * 42)
         draw.line([(0, y), (card_width, y)], fill=(r, g, b))
 
     # 放置画像（16:9，直接缩放到 800×450，不裁剪）
@@ -890,8 +890,8 @@ def create_text_only_card(
     for y in range(0, total_height):
         progress = y / max(1, total_height)
         r = 255
-        g = int(255 - progress * 28)
-        b = int(255 - progress * 28)
+        g = int(255 - progress * 42)
+        b = int(255 - progress * 42)
         draw.line([(0, y), (CARD_WIDTH, y)], fill=(r, g, b))
 
     # 文字区：to xxx → 小诗 → xxx（落款）
