@@ -201,9 +201,6 @@ if "generated_poem" not in st.session_state:
 if "generated_image_url" not in st.session_state:
     st.session_state.generated_image_url = None
 
-if "browser_fp" not in st.session_state:
-    st.session_state.browser_fp = None
-
 if "image_request_failed" not in st.session_state:
     st.session_state.image_request_failed = False
 
@@ -218,52 +215,20 @@ if "generation_inputs" not in st.session_state:
 
 
 # ============================================================
-# 浏览器指纹：通过 JS 注入获取 localStorage UUID
+# 服务端指纹：IP + User-Agent 哈希，不依赖 JS
 # ============================================================
-# 原理：在浏览器 localStorage 中种一个随机UUID作为设备指纹。
-# 每次页面加载时读取并通过 URL query param 传给 Streamlit 后端。
-# 这样即使刷新页面，只要不清 localStorage，指纹不变。
-
-FINGERPRINT_JS = """
-<script>
-(function() {
-    const STORAGE_KEY = 'love_portrait_fp';
-    let fp = localStorage.getItem(STORAGE_KEY);
-    if (!fp) {
-        fp = 'fp_' + crypto.randomUUID();
-        localStorage.setItem(STORAGE_KEY, fp);
-    }
-    // 通过 URL query param 把指纹传给 Streamlit 后端
-    const currentUrl = new URL(window.location.href);
-    const existingFp = currentUrl.searchParams.get('_fp');
-    if (existingFp !== fp) {
-        currentUrl.searchParams.set('_fp', fp);
-        window.history.replaceState({}, '', currentUrl.toString());
-        // 触发 Streamlit 重新读取 query params
-        window.parent.postMessage({type: 'streamlit:setQueryParam', '_fp': fp}, '*');
-    }
-})();
-</script>
-"""
-
-
-def get_browser_fingerprint() -> str | None:
+def get_server_fingerprint() -> str:
     """
-    获取浏览器指纹（localStorage UUID）
-
-    返回指纹字符串，如果尚未获取到则返回 None
+    纯服务端指纹：IP + User-Agent 的哈希
+    不依赖 JS，首次加载就能生效
     """
-    # 注入JS脚本（每次渲染都注入，确保指纹已种入localStorage）
-    st.components.v1.html(FINGERPRINT_JS, height=0, width=0)
-
-    # 从 URL query params 读取指纹
-    params = st.query_params
-    fp = params.get("_fp", None)
-
-    if fp:
-        st.session_state.browser_fp = fp
-
-    return st.session_state.browser_fp
+    ip = get_client_ip()
+    try:
+        ua = st.context.headers.get("User-Agent", "")
+    except Exception:
+        ua = ""
+    raw = f"{ip}:{ua}"
+    return "fp_" + hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 def get_client_ip() -> str:
@@ -875,22 +840,50 @@ def create_text_only_card(
     my_name: str = "",
 ) -> BytesIO:
     """
-    合成纯文字版情书贺卡（无画像、无上方色块，整卡浅粉渐变）。
-    画布 800×1280：全幅渐变，从上到下 to xxx → 小诗 → 落款 → 底部署名。
+    合成纯文字版情书贺卡（无画像，整卡浅粉渐变）。
+    画布宽度 800，高度动态：顶部留白 + 文字区(按行数) + 署名区(100) + 底部二维码/引流区。
     """
-    canvas = Image.new("RGB", (CARD_WIDTH, CARD_HEIGHT), (255, 255, 255))
+    # 1. 先算诗歌需要多少高度
+    poem_font = _find_chinese_font(POEM_FONT_SIZE)
+    poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
+
+    try:
+        sample_bbox = poem_font.getbbox("测试Ag")
+        single_line_height = sample_bbox[3] - sample_bbox[1]
+    except AttributeError:
+        single_line_height = POEM_FONT_SIZE
+
+    line_spacing = int(single_line_height * 1.5)
+    line_spacing = max(line_spacing, int(single_line_height * 1.1))
+
+    # 2. 动态计算各区域高度
+    top_padding = 50  # 顶部留白
+    header_height = 28 + SIGNATURE_LINE_SPACING + 20  # "to xxx" 及与诗歌的间距
+    poem_area_padding = 80
+    poem_area_height = len(poem_lines) * line_spacing + poem_area_padding
+    poem_area_height = max(poem_area_height, 300)
+    signature_area_height = 100
+    footer_area_height = 28 + FOOTER_QR_SIZE + 14 + 28 + 20
+
+    total_height = top_padding + header_height + poem_area_height + signature_area_height + footer_area_height
+
+    canvas = Image.new("RGB", (CARD_WIDTH, total_height), (255, 255, 255))
     draw = ImageDraw.Draw(canvas)
 
-    # 整卡浅粉渐变（无上方粉色色块）
-    for y in range(0, CARD_HEIGHT):
-        progress = y / CARD_HEIGHT
+    text_area_top = top_padding
+    text_area_bottom = top_padding + header_height + poem_area_height
+    signature_top = text_area_bottom
+    footer_top = text_area_bottom + signature_area_height
+
+    # 整卡浅粉渐变
+    for y in range(0, total_height):
+        progress = y / max(1, total_height)
         r = 255
         g = int(255 - progress * 10)
         b = int(255 - progress * 10)
         draw.line([(0, y), (CARD_WIDTH, y)], fill=(r, g, b))
 
-    # 文字区从顶部开始：to xxx → 小诗 → xxx（落款），署名居中
-    text_area_top = 50
+    # 文字区：to xxx → 小诗 → xxx（落款）
     signature_font = _find_chinese_font(SIGNATURE_FONT_SIZE)
     y_top = text_area_top + 28
     if partner_name:
@@ -903,29 +896,20 @@ def create_text_only_card(
         )
     poem_start_y = y_top + SIGNATURE_LINE_SPACING + 20
 
-    poem_font = _find_chinese_font(POEM_FONT_SIZE)
-    poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
-
-    try:
-        sample_bbox = poem_font.getbbox("测试Ag")
-        single_line_height = sample_bbox[3] - sample_bbox[1]
-    except AttributeError:
-        single_line_height = POEM_FONT_SIZE
-
-    poem_area_bottom = SIGNATURE_TOP - 50
+    poem_area_bottom = text_area_bottom - 50
     available_poem_height = poem_area_bottom - poem_start_y - 10
     num_lines = len(poem_lines)
     default_line_spacing = int(single_line_height * 1.5)
-    line_spacing = (
+    actual_line_spacing = (
         (available_poem_height // num_lines)
         if num_lines > 0 and (num_lines * default_line_spacing > available_poem_height)
-        else default_line_spacing
+        else line_spacing
     )
-    line_spacing = max(line_spacing, int(single_line_height * 1.1))
+    actual_line_spacing = max(actual_line_spacing, int(single_line_height * 1.1))
 
     for i, line in enumerate(poem_lines):
-        y = poem_start_y + i * line_spacing
-        if y > poem_area_bottom - line_spacing:
+        y = poem_start_y + i * actual_line_spacing
+        if y > poem_area_bottom - actual_line_spacing:
             break
         _draw_line_with_letter_spacing(
             draw, CARD_WIDTH // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
@@ -933,17 +917,17 @@ def create_text_only_card(
 
     if my_name:
         draw.text(
-            (CARD_WIDTH // 2, SIGNATURE_TOP - 18),
+            (CARD_WIDTH // 2, signature_top + signature_area_height // 2 - 10),
             my_name,
             fill=(80, 80, 80),
             font=signature_font,
             anchor="mm",
         )
 
-    # 底部署名：Astrose 文案 + 公众号二维码 + 提示（引导关注用更大更深色字）
+    # 底部：Astrose 文案 + 公众号二维码 + 提示
     footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
     draw.text(
-        (CARD_WIDTH // 2, FOOTER_AREA_TOP + 10),
+        (CARD_WIDTH // 2, footer_top + 10),
         CARD_FOOTER_LINE1,
         fill=(153, 153, 153),
         font=footer_font,
@@ -955,12 +939,12 @@ def create_text_only_card(
             qr_img = Image.open(qr_path).convert("RGB")
             qr_img = qr_img.resize((FOOTER_QR_SIZE, FOOTER_QR_SIZE), Image.Resampling.LANCZOS)
             qr_x = (CARD_WIDTH - FOOTER_QR_SIZE) // 2
-            canvas.paste(qr_img, (qr_x, FOOTER_AREA_TOP + 28))
+            canvas.paste(qr_img, (qr_x, footer_top + 28))
         except Exception:
             pass
     prompt_font = _find_chinese_font(22)
     draw.text(
-        (CARD_WIDTH // 2, FOOTER_AREA_TOP + 28 + FOOTER_QR_SIZE + 14),
+        (CARD_WIDTH // 2, footer_top + 28 + FOOTER_QR_SIZE + 14),
         CARD_FOOTER_PROMPT,
         fill=(90, 90, 90),
         font=prompt_font,
@@ -980,7 +964,7 @@ def render_input_page():
     """渲染首页 - 情书输入界面"""
 
     # 获取用户身份标识
-    fingerprint = get_browser_fingerprint()
+    fingerprint = get_server_fingerprint()
     client_ip = get_client_ip()
 
     # 标题区域
@@ -1128,7 +1112,7 @@ def render_input_page():
 def render_result_page():
     """渲染结果页 - Tab1：仅文字版和小诗；Tab2：头像+小诗（头像生成后再生成海报）"""
 
-    fingerprint = get_browser_fingerprint()
+    fingerprint = get_server_fingerprint()
     client_ip = get_client_ip()
     poem = st.session_state.generated_poem
 
@@ -1198,7 +1182,7 @@ def render_result_page():
                 st.rerun()
 
         if st.session_state.card_image is not None:
-            st.markdown("**专属画像 海报**")
+            st.markdown("**你眼里的ta**")
             st.session_state.card_image.seek(0)
             st.image(st.session_state.card_image, use_container_width=True)
             st.session_state.card_image.seek(0)
@@ -1299,7 +1283,7 @@ def render_result_page():
 # ============================================================
 def main():
     # 同用户再进或刷新时：若有当日持久化结果则恢复为结果页
-    fingerprint = get_browser_fingerprint()
+    fingerprint = get_server_fingerprint()
     if (
         fingerprint
         and st.session_state.page != "result"
