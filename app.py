@@ -40,16 +40,18 @@ st.markdown("""
         background: linear-gradient(180deg, #FFF0F5 0%, #FFFFFF 30%, #FFF5F5 100%);
     }
 
-    /* 标题样式 */
-    h1 {
+    /* 首页主标题：恢复大字体 */
+    .main-page-title {
         text-align: center;
         color: #E91E63;
-        font-size: 1.75rem !important;
+        font-size: 2.5rem !important;
+        font-weight: bold;
+        margin-bottom: 0.25rem;
     }
-    /* 移动端标题缩小，避免占满屏 */
     @media (max-width: 640px) {
-        h1 { font-size: 1.35rem !important; line-height: 1.4; }
+        .main-page-title { font-size: 2rem !important; }
     }
+    /* 结果页标题：保持较小，移动端更舒适 */
     .result-page-title {
         text-align: center;
         color: #E91E63;
@@ -661,6 +663,39 @@ def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFon
     return ImageFont.load_default()
 
 
+def _draw_line_with_letter_spacing(
+    draw: ImageDraw.ImageDraw,
+    x_center: int,
+    y: int,
+    line: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    fill: tuple[int, int, int],
+    letter_spacing: int = -2,
+) -> None:
+    """绘制一行文字，居中，并应用字距（letter_spacing 为负则更紧凑）"""
+    if not line:
+        return
+    try:
+        total_w = 0
+        for c in line:
+            bbox = font.getbbox(c)
+            total_w += (bbox[2] - bbox[0]) + letter_spacing
+        total_w -= letter_spacing
+    except (TypeError, AttributeError):
+        bbox = font.getbbox(line)
+        total_w = bbox[2] - bbox[0]
+        letter_spacing = 0
+    x = x_center - total_w // 2
+    for c in line:
+        try:
+            bbox = font.getbbox(c)
+            cw = bbox[2] - bbox[0]
+        except (TypeError, AttributeError):
+            cw = 0
+        draw.text((x, y), c, fill=fill, font=font, anchor="lt")
+        x += cw + letter_spacing
+
+
 def _download_image(url: str) -> Image.Image:
     """从URL下载图片并返回PIL Image对象"""
     resp = requests.get(url, timeout=30)
@@ -726,11 +761,11 @@ def create_valentine_card(
     y_top = TEXT_AREA_TOP + 28
     if partner_name:
         draw.text(
-            (CARD_WIDTH - 60, y_top),
+            (CARD_WIDTH // 2, y_top),
             f"to 【{partner_name}】",
             fill=(80, 80, 80),
             font=signature_font,
-            anchor="rm",
+            anchor="mm",
         )
     poem_start_y = y_top + SIGNATURE_LINE_SPACING + 20
 
@@ -758,24 +793,20 @@ def create_valentine_card(
         y = poem_start_y + i * line_spacing
         if y > poem_area_bottom - line_spacing:
             break
-        draw.text(
-            (CARD_WIDTH // 2, y),
-            line,
-            fill=(51, 51, 51),
-            font=poem_font,
-            anchor="mt",
+        _draw_line_with_letter_spacing(
+            draw, CARD_WIDTH // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
         )
 
     if my_name:
         draw.text(
-            (CARD_WIDTH - 60, SIGNATURE_TOP - 18),
+            (CARD_WIDTH // 2, SIGNATURE_TOP - 18),
             my_name,
             fill=(80, 80, 80),
             font=signature_font,
-            anchor="rm",
+            anchor="mm",
         )
 
-    # 底部署名：Astrose 文案 + 公众号二维码 + 提示
+    # 底部署名：Astrose 文案 + 公众号二维码 + 提示（引导关注用更大更深色字）
     footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
     draw.text(
         (CARD_WIDTH // 2, FOOTER_AREA_TOP + 10),
@@ -793,11 +824,12 @@ def create_valentine_card(
             canvas.paste(qr_img, (qr_x, FOOTER_AREA_TOP + 28))
         except Exception:
             pass
+    prompt_font = _find_chinese_font(22)
     draw.text(
         (CARD_WIDTH // 2, FOOTER_AREA_TOP + 28 + FOOTER_QR_SIZE + 14),
         CARD_FOOTER_PROMPT,
-        fill=(153, 153, 153),
-        font=footer_font,
+        fill=(90, 90, 90),
+        font=prompt_font,
         anchor="mm",
     )
 
@@ -827,30 +859,22 @@ def create_text_only_card(
         b = int(255 - progress * 10)
         draw.line([(0, y), (CARD_WIDTH, y)], fill=(r, g, b))
 
-    # 上半部分：浅粉底 + 占位文案
+    # 上半部分：仅浅粉底（文字版无占位文案）
     draw.rectangle(
         [(0, 0), (CARD_WIDTH, IMAGE_AREA_HEIGHT)],
         fill=(255, 240, 245),
     )
-    placeholder_font = _find_chinese_font(PLACEHOLDER_FONT_SIZE)
-    draw.text(
-        (CARD_WIDTH // 2, IMAGE_AREA_HEIGHT // 2),
-        "专属画像生成中…",
-        fill=(200, 200, 200),
-        font=placeholder_font,
-        anchor="mm",
-    )
 
-    # 文字区布局：to xxx → 小诗 → xxx（落款）
+    # 文字区布局：to xxx → 小诗 → xxx（落款），署名居中
     signature_font = _find_chinese_font(SIGNATURE_FONT_SIZE)
     y_top = TEXT_AREA_TOP + 28
     if partner_name:
         draw.text(
-            (CARD_WIDTH - 60, y_top),
+            (CARD_WIDTH // 2, y_top),
             f"to 【{partner_name}】",
             fill=(80, 80, 80),
             font=signature_font,
-            anchor="rm",
+            anchor="mm",
         )
     poem_start_y = y_top + SIGNATURE_LINE_SPACING + 20
 
@@ -878,24 +902,20 @@ def create_text_only_card(
         y = poem_start_y + i * line_spacing
         if y > poem_area_bottom - line_spacing:
             break
-        draw.text(
-            (CARD_WIDTH // 2, y),
-            line,
-            fill=(51, 51, 51),
-            font=poem_font,
-            anchor="mt",
+        _draw_line_with_letter_spacing(
+            draw, CARD_WIDTH // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
         )
 
     if my_name:
         draw.text(
-            (CARD_WIDTH - 60, SIGNATURE_TOP - 18),
+            (CARD_WIDTH // 2, SIGNATURE_TOP - 18),
             my_name,
             fill=(80, 80, 80),
             font=signature_font,
-            anchor="rm",
+            anchor="mm",
         )
 
-    # 底部署名：Astrose 文案 + 公众号二维码 + 提示
+    # 底部署名：Astrose 文案 + 公众号二维码 + 提示（引导关注用更大更深色字）
     footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
     draw.text(
         (CARD_WIDTH // 2, FOOTER_AREA_TOP + 10),
@@ -913,11 +933,12 @@ def create_text_only_card(
             canvas.paste(qr_img, (qr_x, FOOTER_AREA_TOP + 28))
         except Exception:
             pass
+    prompt_font = _find_chinese_font(22)
     draw.text(
         (CARD_WIDTH // 2, FOOTER_AREA_TOP + 28 + FOOTER_QR_SIZE + 14),
         CARD_FOOTER_PROMPT,
-        fill=(153, 153, 153),
-        font=footer_font,
+        fill=(90, 90, 90),
+        font=prompt_font,
         anchor="mm",
     )
 
@@ -938,7 +959,10 @@ def render_input_page():
     client_ip = get_client_ip()
 
     # 标题区域
-    st.markdown("# ✨ Astrose")
+    st.markdown(
+        '<p class="main-page-title">✨ Astrose</p>',
+        unsafe_allow_html=True,
+    )
     st.markdown('<p class="subtitle">Write your romance in the stars.</p>', unsafe_allow_html=True)
     st.markdown('<p class="hint-text">💡 每人可免费生成{}次</p>'.format(MAX_PER_USER), unsafe_allow_html=True)
 
@@ -1100,7 +1124,7 @@ def render_result_page():
             st.markdown("**小诗**")
             st.text(poem)
             st.markdown("---")
-            st.markdown("**纯文字版贺卡**")
+            st.markdown("**为你写诗**")
             text_only_buffer = create_text_only_card(poem, partner_name, my_name)
             text_only_buffer.seek(0)
             st.image(text_only_buffer, use_container_width=True)
