@@ -177,7 +177,7 @@ CARD_FOOTER_QR = "wechat_public_qr.png"   # 公众号二维码，放 assets 目�
 CARD_FOOTER_PROMPT_LINE1 = "关注公众号，并回复：情人节"
 CARD_FOOTER_PROMPT_LINE2 = "给你的TA回信/写信"
 # 情书内文字号（偏大以便移动端阅读）
-POEM_FONT_SIZE = 40
+POEM_FONT_SIZE = 32
 SIGNATURE_FONT_SIZE = 30
 FOOTER_FONT_SIZE = 18
 PLACEHOLDER_FONT_SIZE = 34
