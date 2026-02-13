@@ -1,4 +1,3 @@
 streamlit
 Pillow
 requests
-streamlit-js-eval

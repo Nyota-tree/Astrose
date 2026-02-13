@@ -2,7 +2,7 @@
 Astrose — Write your romance in the stars.
 
 AI-powered love letter & portrait cards: poem + image workflows (Coze), Streamlit, Pillow.
-Rate limiting: browser fingerprint, IP, and global daily cap.
+Rate limiting: global daily cap only.
 """
 
 import streamlit as st
@@ -10,13 +10,11 @@ import requests
 import json
 import os
 import sys
-import hashlib
 import time
 from datetime import datetime, date
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
-from streamlit_js_eval import streamlit_js_eval
 
 # 应用根目录（与 app.py 同目录），用于可靠定位 assets
 APP_DIR = Path(__file__).resolve().parent
@@ -214,47 +212,6 @@ if "show_image_done_toast" not in st.session_state:
 if "generation_inputs" not in st.session_state:
     st.session_state.generation_inputs = None  # 用于结果页请求画像工作流
 
-if "fp_key_counter" not in st.session_state:
-    st.session_state.fp_key_counter = 0
-
-
-# ============================================================
-# 浏览器指纹：localStorage UUID，通过 streamlit_js_eval 同步获取
-# ============================================================
-def get_browser_fingerprint() -> str | None:
-    """
-    通过 streamlit_js_eval 同步获取 localStorage 中的指纹。
-    首次访问时种入 UUID，后续访问直接读取。
-    使用自增 key 避免组件缓存导致返回 None。
-    """
-    st.session_state.fp_key_counter += 1
-    fp = streamlit_js_eval(
-        js_expressions="""
-        (function() {
-            const KEY = 'astrose_fp';
-            let fp = localStorage.getItem(KEY);
-            if (!fp) {
-                fp = 'fp_' + crypto.randomUUID();
-                localStorage.setItem(KEY, fp);
-            }
-            return fp;
-        })()
-        """,
-        key=f"get_fingerprint_{st.session_state.fp_key_counter}",
-    )
-    return fp
-
-
-def get_server_fingerprint() -> str:
-    """服务端指纹兜底：IP + User-Agent 哈希，当浏览器指纹不可用时使用（如手机/嵌入环境）"""
-    ip = get_client_ip()
-    try:
-        ua = st.context.headers.get("User-Agent", "")
-    except Exception:
-        ua = ""
-    raw = f"{ip}:{ua}"
-    return "fp_" + hashlib.sha256(raw.encode()).hexdigest()[:16]
-
 
 def get_client_ip() -> str:
     """
@@ -280,25 +237,14 @@ def get_client_ip() -> str:
 
 
 # ============================================================
-# 持久化限流存储（JSON文件，每日自动重置）
+# 持久化限流存储（JSON 文件，每日自动重置，纯全局计数）
 # ============================================================
-# 数据结构：
-# {
-#     "date": "2026-02-14",
-#     "total_count": 42,
-#     "fingerprints": { "fp_abc123": 3, "fp_def456": 1 },
-#     "ips": { "1.2.3.4": 5, "5.6.7.8": 2 }
-# }
+# 数据结构：{ "date": "2026-02-14", "total_count": 42 }
 
 def _load_rate_data() -> dict:
     """加载限流数据，如果日期不是今天则自动重置"""
     today = date.today().isoformat()
-    default_data = {
-        "date": today,
-        "total_count": 0,
-        "fingerprints": {},
-        "ips": {},
-    }
+    default_data = {"date": today, "total_count": 0}
 
     try:
         if not os.path.exists(RATE_LIMIT_FILE):
@@ -326,70 +272,29 @@ def _save_rate_data(data: dict):
         pass
 
 
-def check_rate_limit(fingerprint: str | None, ip: str) -> tuple[bool, str, int]:
-    """
-    三层限流检查
-
-    返回：(allowed, reason, remaining)
-        - allowed:   是否允许生成
-        - reason:    拒绝原因（"total" / "fingerprint" / "ip" / ""）
-        - remaining: 该用户剩余次数
-    """
+def check_rate_limit() -> tuple[bool, int]:
+    """只检查全局总量。返回 (allowed, remaining)。"""
     data = _load_rate_data()
-
-    # --- 第1层：全局总量 ---
     if data["total_count"] >= TOTAL_LIMIT:
-        return False, "total", 0
-
-    # --- 第2层：浏览器指纹（主力） ---
-    if fingerprint:
-        fp_count = data["fingerprints"].get(fingerprint, 0)
-        if fp_count >= MAX_PER_USER:
-            return False, "fingerprint", 0
-        remaining = MAX_PER_USER - fp_count
-        return True, "", remaining
-
-    # --- 第3层：IP兜底（没有指纹时才依赖IP） ---
-    ip_count = data["ips"].get(ip, 0)
-    if ip_count >= MAX_PER_IP:
-        return False, "ip", 0
-
-    remaining = min(MAX_PER_USER, MAX_PER_IP - ip_count)
-    return True, "", remaining
+        return False, 0
+    return True, TOTAL_LIMIT - data["total_count"]
 
 
-def record_usage(fingerprint: str | None, ip: str):
-    """记录一次使用，同时更新指纹、IP、全局三个维度"""
+def record_usage():
+    """全局计数 +1"""
     data = _load_rate_data()
-
     data["total_count"] = data.get("total_count", 0) + 1
-
-    if fingerprint:
-        data["fingerprints"][fingerprint] = data["fingerprints"].get(fingerprint, 0) + 1
-
-    # IP 始终记录（作为兜底维度）
-    data["ips"][ip] = data["ips"].get(ip, 0) + 1
-
     _save_rate_data(data)
 
-    # ===== 调试：验证文件是否写入成功 =====
-    st.toast(f"DEBUG: saved to {RATE_LIMIT_FILE}, fp={fingerprint}, data={data}")
 
-
-def get_remaining_count(fingerprint: str | None, ip: str) -> int:
-    """获取当前用户剩余次数"""
+def get_remaining_count() -> int:
+    """今日全场剩余免费名额"""
     data = _load_rate_data()
-
-    if fingerprint:
-        used = data["fingerprints"].get(fingerprint, 0)
-        return max(0, MAX_PER_USER - used)
-
-    ip_used = data["ips"].get(ip, 0)
-    return max(0, min(MAX_PER_USER, MAX_PER_IP - ip_used))
+    return max(0, TOTAL_LIMIT - data.get("total_count", 0))
 
 
 # ============================================================
-# 持久化「上次结果」：按指纹存储当日结果，同用户再进可恢复结果页
+# 持久化「上次结果」：按 IP 存储当日结果，同设备再进可恢复结果页
 # ============================================================
 def _load_last_results() -> dict:
     """加载上次结果数据，若不存在或日期不是今天则返回空结构"""
@@ -408,17 +313,17 @@ def _load_last_results() -> dict:
 
 
 def _save_last_result(
-    fingerprint: str,
+    ip: str,
     image_url: str,
     poem: str,
     partner_name: str = "",
     my_name: str = "",
 ):
-    """保存该指纹当日最近一次生成结果（含署名用 TA 名与用户名）"""
-    if not fingerprint:
+    """保存该 IP 当日最近一次生成结果（含署名用 TA 名与用户名）"""
+    if not ip:
         return
     data = _load_last_results()
-    data["results"][fingerprint] = {
+    data["results"][ip] = {
         "image_url": image_url,
         "poem": poem,
         "partner_name": partner_name,
@@ -1011,9 +916,7 @@ def create_text_only_card(
 def render_input_page():
     """渲染首页 - 情书输入界面"""
 
-    # 获取用户身份标识（浏览器 localStorage 优先，不可用时用服务端 IP+UA 兜底，避免手机/嵌入环境卡住）
-    fingerprint = get_browser_fingerprint() or get_server_fingerprint()
-    client_ip = get_client_ip()
+    allowed, remaining = check_rate_limit()
 
     # 标题区域
     st.markdown(
@@ -1021,30 +924,21 @@ def render_input_page():
         unsafe_allow_html=True,
     )
     st.markdown('<p class="subtitle">Write your romance in the stars.</p>', unsafe_allow_html=True)
-    st.markdown('<p class="hint-text">💡 每人可免费生成{}次</p>'.format(MAX_PER_USER), unsafe_allow_html=True)
+    st.markdown(
+        '<p class="hint-text">💡 今日剩余免费名额：{}/{}</p>'.format(remaining, TOTAL_LIMIT),
+        unsafe_allow_html=True,
+    )
 
     # ----- 检查限制 -----
-    allowed, reason, remaining = check_rate_limit(fingerprint, client_ip)
-
     if not allowed:
-        if reason == "total":
-            st.markdown("""
-            <div class="limit-box">
-                <h3>❌ 今天的免费额度已用完 🥹</h3>
-                <p>太受欢迎啦！今天已经为 {} 对情侣生成了画像。</p>
-                <p>💕 可以在小红书评论区留言<br>我会手动帮你生成 ❤️</p>
-                <p><strong>小红书：nyota佳树</strong></p>
-            </div>
-            """.format(TOTAL_LIMIT), unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div class="limit-box">
-                <h3>❌ 你今天的次数已用完（{max}/{max}）🥹</h3>
-                <p>💕 还想要更多？</p>
-                <p>- 明天再来（每天重置）<br>- 或在小红书评论区留言，我会手动帮你生成</p>
-                <p><strong>小红书：nyota佳树</strong></p>
-            </div>
-            """.format(max=MAX_PER_USER), unsafe_allow_html=True)
+        st.markdown("""
+        <div class="limit-box">
+            <h3>❌ 今天的免费额度已用完 🥹</h3>
+            <p>太受欢迎啦！今天已经为 {} 对情侣生成了画像。</p>
+            <p>💕 可以在小红书评论区留言<br>我会手动帮你生成 ❤️</p>
+            <p><strong>小红书：nyota佳树</strong></p>
+        </div>
+        """.format(TOTAL_LIMIT), unsafe_allow_html=True)
         return
 
     # ----- 输入区域（从结果页「重新生成」返回时预填上次内容）-----
@@ -1114,9 +1008,9 @@ def render_input_page():
             return
 
         # ⚠️ 点击时再次校验（防止页面停留期间额度耗尽）
-        allowed2, reason2, _ = check_rate_limit(fingerprint, client_ip)
+        allowed2, _ = check_rate_limit()
         if not allowed2:
-            st.error("次数已用完，请明天再来 🥹")
+            st.error("今日名额已用完，请明天再来 🥹")
             return
 
         with st.spinner("正在为你创作小诗... ✨"):
@@ -1143,8 +1037,8 @@ def render_input_page():
                     "message_to_ta": (message_to_ta or "").strip(),
                 }
 
-                # 记录使用（仅小诗生成计一次）
-                record_usage(fingerprint, client_ip)
+                # 记录使用（全局计数 +1）
+                record_usage()
 
                 st.session_state.page = "result"
                 st.session_state.just_generated = True  # 避免 main 里用持久化旧结果覆盖本次新结果
@@ -1159,10 +1053,10 @@ def render_input_page():
             except Exception:
                 st.error("生成失败，请重试 🥹")
 
-    # 剩余次数
-    left = get_remaining_count(fingerprint, client_ip)
+    # 今日剩余免费名额（与标题区一致，再次拉齐数据）
+    remaining = get_remaining_count()
     st.markdown(
-        '<p class="usage-counter">剩余生成次数：{} / {}</p>'.format(left, MAX_PER_USER),
+        '<p class="usage-counter">💡 今日剩余免费名额：{}/{} ❤️</p>'.format(remaining, TOTAL_LIMIT),
         unsafe_allow_html=True,
     )
 
@@ -1173,7 +1067,6 @@ def render_input_page():
 def render_result_page():
     """渲染结果页 - Tab1：仅文字版和小诗；Tab2：头像+小诗（头像生成后再生成海报）"""
 
-    fingerprint = get_browser_fingerprint() or get_server_fingerprint()
     client_ip = get_client_ip()
     poem = st.session_state.generated_poem
 
@@ -1238,10 +1131,9 @@ def render_result_page():
                         st.session_state.card_image = create_valentine_card(
                             image_url, poem, partner_name, my_name
                         )
-                        if fingerprint:
-                            _save_last_result(
-                                fingerprint, image_url, poem, partner_name, my_name
-                            )
+                        _save_last_result(
+                            client_ip, image_url, poem, partner_name, my_name
+                        )
                     except Exception as card_e:
                         st.session_state.card_image = None
                         st.session_state.image_request_error = f"贺卡合成失败：{type(card_e).__name__} — {card_e}"
@@ -1273,14 +1165,13 @@ def render_result_page():
                     st.session_state.card_image = create_valentine_card(
                         st.session_state.generated_image_url, poem, partner_name, my_name
                     )
-                    if fingerprint:
-                        _save_last_result(
-                            fingerprint,
-                            st.session_state.generated_image_url,
-                            poem,
-                            partner_name,
-                            my_name,
-                        )
+                    _save_last_result(
+                        client_ip,
+                        st.session_state.generated_image_url,
+                        poem,
+                        partner_name,
+                        my_name,
+                    )
                     st.session_state.show_image_done_toast = True
                     st.rerun()
                 except Exception as card_e:
@@ -1290,9 +1181,9 @@ def render_result_page():
                 with st.expander("查看失败原因", expanded=False):
                     st.code(st.session_state.image_request_error, language=None)
 
-    left = get_remaining_count(fingerprint, client_ip)
+    remaining = get_remaining_count()
     st.markdown(
-        '<p class="usage-counter">你今天还有 {} 次机会 ❤️</p>'.format(left),
+        '<p class="usage-counter">💡 今日剩余免费名额：{}/{} ❤️</p>'.format(remaining, TOTAL_LIMIT),
         unsafe_allow_html=True,
     )
 
@@ -1349,19 +1240,18 @@ def render_result_page():
 # 主路由
 # ============================================================
 def main():
-    # 同用户再进或刷新时：若有当日持久化结果则恢复为结果页；刚点击「重新生成」或刚点击「生成」时不再用持久化覆盖
-    fingerprint = get_browser_fingerprint() or get_server_fingerprint()
+    # 同设备再进或刷新时：若有当日持久化结果则恢复为结果页；刚点击「重新生成」或刚点击「生成」时不再用持久化覆盖
+    client_ip = get_client_ip()
     if st.session_state.pop("returning_from_regenerate", False):
         pass  # 本次是点击重新生成返回，不恢复旧结果页
     elif st.session_state.pop("just_generated", False):
         pass  # 本次是点击生成后的首次渲染，不恢复旧结果，直接显示新结果
     elif (
-        fingerprint
-        and st.session_state.page != "result"
+        st.session_state.page != "result"
         and st.session_state.card_image is None
     ):
         data = _load_last_results()
-        saved = data.get("results", {}).get(fingerprint)
+        saved = data.get("results", {}).get(client_ip)
         if saved:
             image_url = saved.get("image_url", "")
             poem = saved.get("poem", "")
