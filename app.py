@@ -553,10 +553,12 @@ def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFon
     assets_dir = APP_DIR / ASSETS_DIR
     assets = []
     if assets_dir.exists():
-        # 先按名字优先：用户上传的 Source Han Serif，再演示春风楷、font 等
+        # 先按名字优先：以对中文支持好的字体优先，避免乱码；Source Han Serif 作为备选（若仅用它仍乱码，请用思源宋体简体版 SourceHanSerifSC-Regular）
         for name in [
+            "演示春风楷.ttf", "font.ttf", "font.otf",
+            "NotoSansSC-Regular.otf", "NotoSansSC-Regular.ttf",
+            "SourceHanSerifSC-Regular.otf", "SourceHanSerifSC-Regular.ttf",
             "SourceHanSerif-Regular.otf", "SourceHanSerif-Regular.ttf",
-            "演示春风楷.ttf", "font.ttf", "font.otf", "NotoSansSC-Regular.otf", "NotoSansSC-Regular.ttf",
         ]:
             p = assets_dir / name
             if p.exists():
