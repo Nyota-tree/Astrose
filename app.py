@@ -706,7 +706,8 @@ def create_valentine_card(
 
     # 1. 先算诗歌需要多少高度
     poem_font = _find_chinese_font(POEM_FONT_SIZE)
-    poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
+    # 保留空行，段落之间会有空行
+    poem_lines = [line.strip() for line in poem_text.split("\n")]
 
     try:
         sample_bbox = poem_font.getbbox("测试Ag")
@@ -717,7 +718,7 @@ def create_valentine_card(
     line_spacing = int(single_line_height * 1.5)
     line_spacing = max(line_spacing, int(single_line_height * 1.1))
 
-    # 2. 动态计算各区域高度
+    # 2. 动态计算各区域高度（空行也占一行高度）
     poem_area_padding = 80  # 诗歌区上下留白
     poem_area_height = len(poem_lines) * line_spacing + poem_area_padding
     poem_area_height = max(poem_area_height, 300)  # 最小 300
@@ -849,7 +850,8 @@ def create_text_only_card(
     """
     # 1. 先算诗歌需要多少高度
     poem_font = _find_chinese_font(POEM_FONT_SIZE)
-    poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
+    # 保留空行，段落之间会有空行
+    poem_lines = [line.strip() for line in poem_text.split("\n")]
 
     try:
         sample_bbox = poem_font.getbbox("测试Ag")
@@ -860,7 +862,7 @@ def create_text_only_card(
     line_spacing = int(single_line_height * 1.5)
     line_spacing = max(line_spacing, int(single_line_height * 1.1))
 
-    # 2. 动态计算各区域高度
+    # 2. 动态计算各区域高度（空行也占一行高度）
     top_padding = 50  # 顶部留白
     header_height = 28 + SIGNATURE_LINE_SPACING + 20  # "to xxx" 及与诗歌的间距
     poem_area_padding = 80
@@ -915,9 +917,10 @@ def create_text_only_card(
         y = poem_start_y + i * actual_line_spacing
         if y > poem_area_bottom - actual_line_spacing:
             break
-        _draw_line_with_letter_spacing(
-            draw, CARD_WIDTH // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
-        )
+        if line:  # 空行不画字，只占行高，形成段落间空行
+            _draw_line_with_letter_spacing(
+                draw, CARD_WIDTH // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
+            )
 
     if my_name:
         draw.text(
