@@ -51,15 +51,17 @@ st.markdown("""
     @media (max-width: 640px) {
         .main-page-title { font-size: 2rem !important; }
     }
-    /* 结果页标题：保持较小，移动端更舒适 */
+    /* 结果页标题：保持较小，移动端更舒适；减少上方留白 */
     .result-page-title {
         text-align: center;
         color: #E91E63;
         font-size: 1.5rem !important;
+        margin-top: -0.5rem !important;
         margin-bottom: 0.5rem;
+        padding-top: 0;
     }
     @media (max-width: 640px) {
-        .result-page-title { font-size: 1.2rem !important; }
+        .result-page-title { font-size: 1.2rem !important; margin-top: -0.25rem !important; }
     }
 
     /* 副标题 */
@@ -207,6 +209,9 @@ if "image_request_failed" not in st.session_state:
 
 if "image_request_error" not in st.session_state:
     st.session_state.image_request_error = ""  # 画像/贺卡失败时的具体报错，用于展示
+
+if "show_image_done_toast" not in st.session_state:
+    st.session_state.show_image_done_toast = False  # 画像生成完成后下次渲染时弹出 toast
 
 if "generation_inputs" not in st.session_state:
     st.session_state.generation_inputs = None  # 用于结果页请求画像工作流
@@ -539,19 +544,24 @@ def call_coze_workflow_image(
     response.raise_for_status()
     result = response.json()
     data = result.get("data", {})
-    image_url = ""
-    if isinstance(data, str):
-        # 扣子有时直接返回 data 为图片 URL 字符串
-        if data.strip().startswith(("http://", "https://")):
-            image_url = data.strip()
-        else:
-            try:
-                data = json.loads(data)
-                image_url = data.get("image_url", "")
-            except (json.JSONDecodeError, TypeError):
-                pass
-    else:
-        image_url = data.get("image_url", "")
+
+    def _take_url(val):
+        if isinstance(val, str):
+            s = val.strip()
+            if s.startswith(("http://", "https://")):
+                return s
+        return ""
+
+    image_url = _take_url(data)
+    if not image_url and isinstance(data, str):
+        try:
+            inner = json.loads(data)
+            image_url = _take_url(inner.get("image_url")) or _take_url(inner.get("data"))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if not image_url and isinstance(data, dict):
+        image_url = _take_url(data.get("image_url")) or _take_url(data.get("data"))
+
     if not image_url:
         raise ValueError("API未返回有效的图片URL")
     return image_url
@@ -845,29 +855,24 @@ def create_text_only_card(
     my_name: str = "",
 ) -> BytesIO:
     """
-    合成纯文字版情书贺卡（无画像，上半为占位提示）。
-    画布 800×1200：上半占位区，下半诗歌，署名（to TA / 落款 用户），底部署名。
+    合成纯文字版情书贺卡（无画像、无上方色块，整卡浅粉渐变）。
+    画布 800×1280：全幅渐变，从上到下 to xxx → 小诗 → 落款 → 底部署名。
     """
     canvas = Image.new("RGB", (CARD_WIDTH, CARD_HEIGHT), (255, 255, 255))
     draw = ImageDraw.Draw(canvas)
 
-    # 下半部分浅粉渐变
-    for y in range(TEXT_AREA_TOP, CARD_HEIGHT):
-        progress = (y - TEXT_AREA_TOP) / (CARD_HEIGHT - TEXT_AREA_TOP)
+    # 整卡浅粉渐变（无上方粉色色块）
+    for y in range(0, CARD_HEIGHT):
+        progress = y / CARD_HEIGHT
         r = 255
         g = int(255 - progress * 10)
         b = int(255 - progress * 10)
         draw.line([(0, y), (CARD_WIDTH, y)], fill=(r, g, b))
 
-    # 上半部分：仅浅粉底（文字版无占位文案）
-    draw.rectangle(
-        [(0, 0), (CARD_WIDTH, IMAGE_AREA_HEIGHT)],
-        fill=(255, 240, 245),
-    )
-
-    # 文字区布局：to xxx → 小诗 → xxx（落款），署名居中
+    # 文字区从顶部开始：to xxx → 小诗 → xxx（落款），署名居中
+    text_area_top = 50
     signature_font = _find_chinese_font(SIGNATURE_FONT_SIZE)
-    y_top = TEXT_AREA_TOP + 28
+    y_top = text_area_top + 28
     if partner_name:
         draw.text(
             (CARD_WIDTH // 2, y_top),
@@ -1107,7 +1112,10 @@ def render_result_page():
     client_ip = get_client_ip()
     poem = st.session_state.generated_poem
 
-    st.balloons()
+    if st.session_state.get("show_image_done_toast"):
+        st.toast("专属画像已生成完成")
+        st.session_state.show_image_done_toast = False
+
     st.markdown(
         '<p class="result-page-title">✨ 你的专属情书贺卡</p>',
         unsafe_allow_html=True,
@@ -1117,14 +1125,10 @@ def render_result_page():
     partner_name = (inputs.get("partner_name") or "").strip() if inputs else ""
     my_name = (inputs.get("my_name") or "").strip() if inputs else ""
 
-    tab1, tab2 = st.tabs(["仅文字版和小诗", "头像+小诗"])
+    tab1, tab2 = st.tabs(["为你写诗", "专属画像"])
 
     with tab1:
         if poem:
-            st.markdown("**小诗**")
-            st.text(poem)
-            st.markdown("---")
-            st.markdown("**为你写诗**")
             text_only_buffer = create_text_only_card(poem, partner_name, my_name)
             text_only_buffer.seek(0)
             st.image(text_only_buffer, use_container_width=True)
@@ -1137,6 +1141,13 @@ def render_result_page():
                 use_container_width=True,
                 key="dl_text_only",
             )
+            # 海报下方放文字：段落内用 / 连接，段落间换行
+            paragraphs = [p.strip() for p in poem.split("\n\n") if p.strip()]
+            poem_display = "\n\n".join(
+                " / ".join(line.strip() for line in p.split("\n") if line.strip())
+                for p in paragraphs
+            )
+            st.text(poem_display)
 
     with tab2:
         # 若尚未生成画像：先请求画像工作流，成功后再生成海报
@@ -1163,10 +1174,11 @@ def render_result_page():
                     except Exception as card_e:
                         st.session_state.card_image = None
                         st.session_state.image_request_error = f"贺卡合成失败：{type(card_e).__name__} — {card_e}"
+                st.session_state.show_image_done_toast = True
                 st.rerun()
 
         if st.session_state.card_image is not None:
-            st.markdown("**头像+小诗 海报**")
+            st.markdown("**专属画像 海报**")
             st.session_state.card_image.seek(0)
             st.image(st.session_state.card_image, use_container_width=True)
             st.session_state.card_image.seek(0)
@@ -1198,6 +1210,7 @@ def render_result_page():
                             partner_name,
                             my_name,
                         )
+                    st.session_state.show_image_done_toast = True
                     st.rerun()
                 except Exception as card_e:
                     st.session_state.image_request_error = f"贺卡合成失败：{type(card_e).__name__} — {card_e}"
