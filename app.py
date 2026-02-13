@@ -214,6 +214,9 @@ if "show_image_done_toast" not in st.session_state:
 if "generation_inputs" not in st.session_state:
     st.session_state.generation_inputs = None  # 用于结果页请求画像工作流
 
+if "fp_key_counter" not in st.session_state:
+    st.session_state.fp_key_counter = 0
+
 
 # ============================================================
 # 浏览器指纹：localStorage UUID，通过 streamlit_js_eval 同步获取
@@ -222,8 +225,9 @@ def get_browser_fingerprint() -> str | None:
     """
     通过 streamlit_js_eval 同步获取 localStorage 中的指纹。
     首次访问时种入 UUID，后续访问直接读取。
-    比 components.v1.html 注入 JS 可靠，因为它是同步阻塞的。
+    使用自增 key 避免组件缓存导致返回 None。
     """
+    st.session_state.fp_key_counter += 1
     fp = streamlit_js_eval(
         js_expressions="""
         (function() {
@@ -236,7 +240,7 @@ def get_browser_fingerprint() -> str | None:
             return fp;
         })()
         """,
-        key="get_fingerprint",
+        key=f"get_fingerprint_{st.session_state.fp_key_counter}",
     )
     return fp
 
