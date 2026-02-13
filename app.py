@@ -546,19 +546,19 @@ _FALLBACK_FONT_URL = (
 
 
 def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """查找可用的中文字体；优先使用 assets 内字体（如 演示春风楷.ttf），避免贺卡中文乱码"""
+    """查找可用的中文字体；优先使用 assets 内字体（如 font.ttf、SourceHanSerif），避免贺卡中文乱码"""
     global _chinese_font_path_cache
 
     # 项目内字体（使用与 app.py 同目录的 assets）；优先使用用户放在 assets 的字体
     assets_dir = APP_DIR / ASSETS_DIR
     assets = []
     if assets_dir.exists():
-        # 先按名字优先：以对中文支持好的字体优先，避免乱码；Source Han Serif 作为备选（若仅用它仍乱码，请用思源宋体简体版 SourceHanSerifSC-Regular）
+        # 先按名字优先：Source Han Serif 优先，再 font、Noto 等
         for name in [
-            "演示春风楷.ttf", "font.ttf", "font.otf",
-            "NotoSansSC-Regular.otf", "NotoSansSC-Regular.ttf",
-            "SourceHanSerifSC-Regular.otf", "SourceHanSerifSC-Regular.ttf",
             "SourceHanSerif-Regular.otf", "SourceHanSerif-Regular.ttf",
+            "SourceHanSerifSC-Regular.otf", "SourceHanSerifSC-Regular.ttf",
+            "font.ttf", "font.otf",
+            "NotoSansSC-Regular.otf", "NotoSansSC-Regular.ttf",
         ]:
             p = assets_dir / name
             if p.exists():
@@ -1110,6 +1110,7 @@ def render_input_page():
                 record_usage(fingerprint, client_ip)
 
                 st.session_state.page = "result"
+                st.session_state.just_generated = True  # 避免 main 里用持久化旧结果覆盖本次新结果
                 st.rerun()
 
             except requests.exceptions.Timeout:
@@ -1311,10 +1312,12 @@ def render_result_page():
 # 主路由
 # ============================================================
 def main():
-    # 同用户再进或刷新时：若有当日持久化结果则恢复为结果页（用户点击「重新生成」返回时不恢复）
+    # 同用户再进或刷新时：若有当日持久化结果则恢复为结果页；刚点击「重新生成」或刚点击「生成」时不再用持久化覆盖
     fingerprint = get_server_fingerprint()
     if st.session_state.pop("returning_from_regenerate", False):
-        pass  # 本次是点击重新生成返回，不执行下面的持久化恢复
+        pass  # 本次是点击重新生成返回，不恢复旧结果页
+    elif st.session_state.pop("just_generated", False):
+        pass  # 本次是点击生成后的首次渲染，不恢复旧结果，直接显示新结果
     elif (
         fingerprint
         and st.session_state.page != "result"
