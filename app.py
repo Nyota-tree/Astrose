@@ -174,7 +174,6 @@ TEXT_AREA_BOTTOM = 1150
 SIGNATURE_TOP = 1070   # 署名区：to TA / 落款 用户
 FOOTER_AREA_TOP = 1150
 FOOTER_QR_SIZE = 120  # 公众号二维码边长
-CARD_FOOTER_LINE1 = "Astrose：把你们的故事写在星辰里"
 CARD_FOOTER_QR = "wechat_public_qr.png"   # 公众号二维码，放 assets 目录
 CARD_FOOTER_PROMPT_LINE1 = "关注公众号，并回复：情人节"
 CARD_FOOTER_PROMPT_LINE2 = "给你的TA回信/写信"
@@ -720,7 +719,7 @@ def create_valentine_card(
     poem_area_height = len(poem_lines) * line_spacing + poem_area_padding
     poem_area_height = max(poem_area_height, 300)  # 最小 300
     signature_area_height = 100  # 署名区 to xxx / 落款
-    footer_area_height = 10 + FOOTER_QR_SIZE + 14 + 48 + 12 + 28 + 8 + 28  # 二维码+Astrose 文案(下)+两行钩子
+    footer_area_height = 10 + FOOTER_QR_SIZE + 14 + 28 + 8 + 28  # 二维码+两行钩子
 
     total_height = image_area_height + poem_area_height + signature_area_height + footer_area_height
 
@@ -737,8 +736,8 @@ def create_valentine_card(
     for y in range(text_area_top, total_height):
         progress = (y - text_area_top) / max(1, total_height - text_area_top)
         r = 255
-        g = int(255 - progress * 42)
-        b = int(255 - progress * 42)
+        g = int(255 - progress * 10)
+        b = int(255 - progress * 10)
         draw.line([(0, y), (card_width, y)], fill=(r, g, b))
 
     # 放置画像（16:9，直接缩放到 800×450，不裁剪）
@@ -802,7 +801,7 @@ def create_valentine_card(
             anchor="mm",
         )
 
-    # 底部：公众号二维码 → Astrose 文案(与小诗同字号) → 两行钩子
+    # 底部：公众号二维码 + 两行钩子
     qr_path = Path(ASSETS_DIR) / CARD_FOOTER_QR
     qr_y = footer_top + 10
     if qr_path.exists():
@@ -813,17 +812,8 @@ def create_valentine_card(
             canvas.paste(qr_img, (qr_x, qr_y))
         except Exception:
             pass
-    footer_line_font = _find_chinese_font(POEM_FONT_SIZE)
-    astrose_y = qr_y + FOOTER_QR_SIZE + 14
-    draw.text(
-        (card_width // 2, astrose_y + 24),
-        CARD_FOOTER_LINE1,
-        fill=(153, 153, 153),
-        font=footer_line_font,
-        anchor="mm",
-    )
     prompt_font = _find_chinese_font(22)
-    prompt_y = astrose_y + 48 + 12
+    prompt_y = qr_y + FOOTER_QR_SIZE + 14
     draw.text(
         (card_width // 2, prompt_y),
         CARD_FOOTER_PROMPT_LINE1,
@@ -874,7 +864,7 @@ def create_text_only_card(
     poem_area_height = len(poem_lines) * line_spacing + poem_area_padding
     poem_area_height = max(poem_area_height, 300)
     signature_area_height = 100
-    footer_area_height = 10 + FOOTER_QR_SIZE + 14 + 48 + 12 + 28 + 8 + 28  # 二维码+Astrose 文案(下)+两行钩子
+    footer_area_height = 10 + FOOTER_QR_SIZE + 14 + 28 + 8 + 28  # 二维码+两行钩子
 
     total_height = top_padding + header_height + poem_area_height + signature_area_height + footer_area_height
 
@@ -890,8 +880,8 @@ def create_text_only_card(
     for y in range(0, total_height):
         progress = y / max(1, total_height)
         r = 255
-        g = int(255 - progress * 42)
-        b = int(255 - progress * 42)
+        g = int(255 - progress * 10)
+        b = int(255 - progress * 10)
         draw.line([(0, y), (CARD_WIDTH, y)], fill=(r, g, b))
 
     # 文字区：to xxx → 小诗 → xxx（落款）
@@ -935,7 +925,7 @@ def create_text_only_card(
             anchor="mm",
         )
 
-    # 底部：公众号二维码 → Astrose 文案(与小诗同字号) → 两行钩子
+    # 底部：公众号二维码 + 两行钩子
     qr_path = Path(ASSETS_DIR) / CARD_FOOTER_QR
     qr_y = footer_top + 10
     if qr_path.exists():
@@ -946,17 +936,8 @@ def create_text_only_card(
             canvas.paste(qr_img, (qr_x, qr_y))
         except Exception:
             pass
-    footer_line_font = _find_chinese_font(POEM_FONT_SIZE)
-    astrose_y = qr_y + FOOTER_QR_SIZE + 14
-    draw.text(
-        (CARD_WIDTH // 2, astrose_y + 24),
-        CARD_FOOTER_LINE1,
-        fill=(153, 153, 153),
-        font=footer_line_font,
-        anchor="mm",
-    )
     prompt_font = _find_chinese_font(22)
-    prompt_y = astrose_y + 48 + 12
+    prompt_y = qr_y + FOOTER_QR_SIZE + 14
     draw.text(
         (CARD_WIDTH // 2, prompt_y),
         CARD_FOOTER_PROMPT_LINE1,
@@ -1155,6 +1136,12 @@ def render_result_page():
 
     st.markdown(
         '<p class="result-page-title">✨ 你的专属情书贺卡</p>',
+        unsafe_allow_html=True,
+    )
+    # 锚点 + 脚本：进入结果页时滚动到海报区域并居中
+    st.markdown(
+        '<div id="result-poster-anchor"></div>'
+        '<script>var e=document.getElementById("result-poster-anchor");if(e)e.scrollIntoView({behavior:"smooth",block:"center"});</script>',
         unsafe_allow_html=True,
     )
 
