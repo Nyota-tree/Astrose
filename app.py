@@ -245,6 +245,17 @@ def get_browser_fingerprint() -> str | None:
     return fp
 
 
+def get_server_fingerprint() -> str:
+    """服务端指纹兜底：IP + User-Agent 哈希，当浏览器指纹不可用时使用（如手机/嵌入环境）"""
+    ip = get_client_ip()
+    try:
+        ua = st.context.headers.get("User-Agent", "")
+    except Exception:
+        ua = ""
+    raw = f"{ip}:{ua}"
+    return "fp_" + hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
 def get_client_ip() -> str:
     """
     获取客户端真实IP
@@ -321,13 +332,9 @@ def check_rate_limit(fingerprint: str | None, ip: str) -> tuple[bool, str, int]:
 
     返回：(allowed, reason, remaining)
         - allowed:   是否允许生成
-        - reason:    拒绝原因（"total" / "fingerprint" / "ip" / "loading" / ""）
+        - reason:    拒绝原因（"total" / "fingerprint" / "ip" / ""）
         - remaining: 该用户剩余次数
     """
-    # 指纹未就绪时（streamlit_js_eval 首次渲染可能返回 None）不放行
-    if fingerprint is None:
-        return False, "loading", 0
-
     data = _load_rate_data()
 
     # --- 第1层：全局总量 ---
@@ -1004,12 +1011,9 @@ def create_text_only_card(
 def render_input_page():
     """渲染首页 - 情书输入界面"""
 
-    # 获取用户身份标识
-    fingerprint = get_browser_fingerprint()
+    # 获取用户身份标识（浏览器 localStorage 优先，不可用时用服务端 IP+UA 兜底，避免手机/嵌入环境卡住）
+    fingerprint = get_browser_fingerprint() or get_server_fingerprint()
     client_ip = get_client_ip()
-
-    # ===== 调试 =====
-    st.toast(f"DEBUG: fp={fingerprint}, ip={client_ip}, file_exists={os.path.exists(RATE_LIMIT_FILE)}")
 
     # 标题区域
     st.markdown(
@@ -1023,9 +1027,7 @@ def render_input_page():
     allowed, reason, remaining = check_rate_limit(fingerprint, client_ip)
 
     if not allowed:
-        if reason == "loading":
-            st.warning("页面加载中，请稍后刷新再试 ❤️")
-        elif reason == "total":
+        if reason == "total":
             st.markdown("""
             <div class="limit-box">
                 <h3>❌ 今天的免费额度已用完 🥹</h3>
@@ -1112,15 +1114,9 @@ def render_input_page():
             return
 
         # ⚠️ 点击时再次校验（防止页面停留期间额度耗尽）
-        if not fingerprint:
-            st.warning("页面加载中，请稍后再点 ❤️")
-            return
         allowed2, reason2, _ = check_rate_limit(fingerprint, client_ip)
         if not allowed2:
-            if reason2 == "loading":
-                st.warning("页面加载中，请稍后再点 ❤️")
-            else:
-                st.error("次数已用完，请明天再来 🥹")
+            st.error("次数已用完，请明天再来 🥹")
             return
 
         with st.spinner("正在为你创作小诗... ✨"):
@@ -1177,7 +1173,7 @@ def render_input_page():
 def render_result_page():
     """渲染结果页 - Tab1：仅文字版和小诗；Tab2：头像+小诗（头像生成后再生成海报）"""
 
-    fingerprint = get_browser_fingerprint()
+    fingerprint = get_browser_fingerprint() or get_server_fingerprint()
     client_ip = get_client_ip()
     poem = st.session_state.generated_poem
 
@@ -1354,7 +1350,7 @@ def render_result_page():
 # ============================================================
 def main():
     # 同用户再进或刷新时：若有当日持久化结果则恢复为结果页；刚点击「重新生成」或刚点击「生成」时不再用持久化覆盖
-    fingerprint = get_browser_fingerprint()
+    fingerprint = get_browser_fingerprint() or get_server_fingerprint()
     if st.session_state.pop("returning_from_regenerate", False):
         pass  # 本次是点击重新生成返回，不恢复旧结果页
     elif st.session_state.pop("just_generated", False):
