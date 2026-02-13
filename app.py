@@ -1219,17 +1219,6 @@ def render_result_page():
             unsafe_allow_html=True,
         )
 
-    st.markdown("")
-    if st.button("🔄 重新生成", use_container_width=True):
-        st.session_state.page = "input"
-        st.session_state.card_image = None
-        st.session_state.generated_poem = None
-        st.session_state.generated_image_url = None
-        st.session_state.returning_from_regenerate = True  # 标记为点击重新生成返回，避免 main 里从持久化又恢复成结果页
-        st.session_state.image_request_failed = False
-        st.session_state.image_request_error = ""
-        st.rerun()
-
     st.markdown(
         '<p class="footer-text">Astrose — Write your romance in the stars.</p>',
         unsafe_allow_html=True,
