@@ -1020,7 +1020,19 @@ def render_input_page():
             """.format(max=MAX_PER_USER), unsafe_allow_html=True)
         return
 
-    # ----- 输入区域 -----
+    # ----- 输入区域（从结果页「重新生成」返回时预填上次内容）-----
+    inputs = st.session_state.get("generation_inputs")
+    if inputs:
+        st.session_state["partner_name_input"] = inputs.get("partner_name") or ""
+        st.session_state["my_name_input"] = inputs.get("my_name") or ""
+        g = (inputs.get("partner_gender") or "女").strip()
+        if g not in ("女", "男", "无性别"):
+            g = "女"
+        st.session_state["partner_gender_input"] = g
+        st.session_state["ta_in_my_eyes_input"] = inputs.get("ta_in_my_eyes") or ""
+        st.session_state["message_to_ta_input"] = inputs.get("message_to_ta") or ""
+        st.session_state["love_letter_input"] = inputs.get("user_input") or ""
+
     col_left, col_right = st.columns(2)
     with col_left:
         partner_name = st.text_input(
@@ -1288,7 +1300,7 @@ def render_result_page():
         st.session_state.card_image = None
         st.session_state.generated_poem = None
         st.session_state.generated_image_url = None
-        st.session_state.generation_inputs = None
+        # 保留 generation_inputs，回到主页时预填上次内容
         st.session_state.image_request_failed = False
         st.session_state.image_request_error = ""
         st.rerun()
