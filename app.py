@@ -792,9 +792,10 @@ def create_valentine_card(
         y = poem_start_y + i * actual_line_spacing
         if y > poem_area_bottom - actual_line_spacing:
             break
-        _draw_line_with_letter_spacing(
-            draw, card_width // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
-        )
+        if line:  # 空行不画字，只占行高，形成段落间空行
+            _draw_line_with_letter_spacing(
+                draw, card_width // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
+            )
 
     if my_name:
         draw.text(
