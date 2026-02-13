@@ -1287,7 +1287,7 @@ def render_result_page():
         st.session_state.card_image = None
         st.session_state.generated_poem = None
         st.session_state.generated_image_url = None
-        # 保留 generation_inputs，回到主页时预填上次内容
+        st.session_state.returning_from_regenerate = True  # 标记为点击重新生成返回，避免 main 里从持久化又恢复成结果页
         st.session_state.image_request_failed = False
         st.session_state.image_request_error = ""
         st.rerun()
@@ -1302,9 +1302,11 @@ def render_result_page():
 # 主路由
 # ============================================================
 def main():
-    # 同用户再进或刷新时：若有当日持久化结果则恢复为结果页
+    # 同用户再进或刷新时：若有当日持久化结果则恢复为结果页（用户点击「重新生成」返回时不恢复）
     fingerprint = get_server_fingerprint()
-    if (
+    if st.session_state.pop("returning_from_regenerate", False):
+        pass  # 本次是点击重新生成返回，不执行下面的持久化恢复
+    elif (
         fingerprint
         and st.session_state.page != "result"
         and st.session_state.card_image is None
