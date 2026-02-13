@@ -347,6 +347,9 @@ def record_usage(fingerprint: str | None, ip: str):
 
     _save_rate_data(data)
 
+    # ===== 调试：验证文件是否写入成功 =====
+    st.toast(f"DEBUG: saved to {RATE_LIMIT_FILE}, fp={fingerprint}, data={data}")
+
 
 def get_remaining_count(fingerprint: str | None, ip: str) -> int:
     """获取当前用户剩余次数"""
@@ -553,18 +556,18 @@ def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFon
     assets_dir = APP_DIR / ASSETS_DIR
     assets = []
     if assets_dir.exists():
-        # 先按名字优先：Source Han Serif 优先，再 font、Noto 等
+        # 先按名字优先：思源宋体简体(SC)优先避免乱码，再通用版，再 font、Noto 等
         for name in [
-            "SourceHanSerif-Regular.otf", "SourceHanSerif-Regular.ttf",
-            "SourceHanSerifSC-Regular.otf", "SourceHanSerifSC-Regular.ttf",
+            "SourceHanSerifSC-Regular.otf", "SourceHanSerifSC-Regular.ttf", "SourceHanSerifSC-Regular.ttc",
+            "SourceHanSerif-Regular.ttc", "SourceHanSerif-Regular.otf", "SourceHanSerif-Regular.ttf",
             "font.ttf", "font.otf",
             "NotoSansSC-Regular.otf", "NotoSansSC-Regular.ttf",
         ]:
             p = assets_dir / name
             if p.exists():
                 assets.append(str(p))
-        # 再收集 assets 下其余 .ttf/.otf，避免漏掉其它命名
-        for ext in ("*.ttf", "*.otf"):
+        # 再收集 assets 下其余 .ttf/.otf/.ttc，避免漏掉其它命名
+        for ext in ("*.ttf", "*.otf", "*.ttc"):
             for p in assets_dir.glob(ext):
                 path_str = str(p)
                 if path_str not in assets:
