@@ -174,6 +174,9 @@ TEXT_AREA_BOTTOM = 1150
 SIGNATURE_TOP = 1070   # 署名区：to TA / 落款 用户
 FOOTER_AREA_TOP = 1150
 FOOTER_QR_SIZE = 88
+# 专属画像海报：顶部画像与画布尺寸
+PORTRAIT_CARD_WIDTH = 1820
+PORTRAIT_IMAGE_HEIGHT = 1024
 CARD_FOOTER_LINE1 = "【Astrose-把你们的故事写在星辰里】"
 CARD_FOOTER_QR = "wechat_public_qr.png"   # 公众号二维码，放 assets 目录
 CARD_FOOTER_PROMPT = "【回复：情人节，给你的TA写信/回信】"
@@ -732,8 +735,11 @@ def create_valentine_card(
 ) -> BytesIO:
     """
     合成专属画像海报（带头像+小诗）。
-    画布高度动态：画像区(600) + 文字区(按行数) + 署名区(100) + 底部二维码/引流区。
+    画布宽度 1820，画像区 1820×1024；高度动态：画像区 + 文字区(按行数) + 署名区(100) + 底部二维码/引流区。
     """
+    card_width = PORTRAIT_CARD_WIDTH
+    image_area_height = PORTRAIT_IMAGE_HEIGHT  # 1820×1024
+
     # 1. 先算诗歌需要多少高度
     poem_font = _find_chinese_font(POEM_FONT_SIZE)
     poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
@@ -748,7 +754,6 @@ def create_valentine_card(
     line_spacing = max(line_spacing, int(single_line_height * 1.1))
 
     # 2. 动态计算各区域高度
-    image_area_height = 600
     poem_area_padding = 80  # 诗歌区上下留白
     poem_area_height = len(poem_lines) * line_spacing + poem_area_padding
     poem_area_height = max(poem_area_height, 300)  # 最小 300
@@ -758,7 +763,7 @@ def create_valentine_card(
     total_height = image_area_height + poem_area_height + signature_area_height + footer_area_height
 
     # 3. 用动态高度创建画布
-    canvas = Image.new("RGB", (CARD_WIDTH, total_height), (255, 255, 255))
+    canvas = Image.new("RGB", (card_width, total_height), (255, 255, 255))
     draw = ImageDraw.Draw(canvas)
 
     text_area_top = image_area_height
@@ -772,22 +777,22 @@ def create_valentine_card(
         r = 255
         g = int(255 - progress * 10)
         b = int(255 - progress * 10)
-        draw.line([(0, y), (CARD_WIDTH, y)], fill=(r, g, b))
+        draw.line([(0, y), (card_width, y)], fill=(r, g, b))
 
-    # 放置画像
+    # 放置画像（1820×1024）
     try:
         portrait = _download_image(image_url)
-        portrait = _crop_center(portrait, CARD_WIDTH, image_area_height)
+        portrait = _crop_center(portrait, card_width, image_area_height)
         canvas.paste(portrait, (0, 0))
     except Exception:
         placeholder_draw = ImageDraw.Draw(canvas)
         placeholder_draw.rectangle(
-            [(0, 0), (CARD_WIDTH, image_area_height)],
+            [(0, 0), (card_width, image_area_height)],
             fill=(255, 240, 245),
         )
         fallback_font = _find_chinese_font(PLACEHOLDER_SMALL_FONT_SIZE)
         placeholder_draw.text(
-            (CARD_WIDTH // 2, image_area_height // 2),
+            (card_width // 2, image_area_height // 2),
             "画像加载中...",
             fill=(200, 200, 200),
             font=fallback_font,
@@ -799,7 +804,7 @@ def create_valentine_card(
     y_top = text_area_top + 28
     if partner_name:
         draw.text(
-            (CARD_WIDTH // 2, y_top),
+            (card_width // 2, y_top),
             f"to 【{partner_name}】",
             fill=(80, 80, 80),
             font=signature_font,
@@ -823,12 +828,12 @@ def create_valentine_card(
         if y > poem_area_bottom - actual_line_spacing:
             break
         _draw_line_with_letter_spacing(
-            draw, CARD_WIDTH // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
+            draw, card_width // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
         )
 
     if my_name:
         draw.text(
-            (CARD_WIDTH // 2, signature_top + signature_area_height // 2 - 10),
+            (card_width // 2, signature_top + signature_area_height // 2 - 10),
             my_name,
             fill=(80, 80, 80),
             font=signature_font,
@@ -838,7 +843,7 @@ def create_valentine_card(
     # 底部：Astrose 文案 + 公众号二维码 + 提示
     footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
     draw.text(
-        (CARD_WIDTH // 2, footer_top + 10),
+        (card_width // 2, footer_top + 10),
         CARD_FOOTER_LINE1,
         fill=(153, 153, 153),
         font=footer_font,
@@ -849,13 +854,13 @@ def create_valentine_card(
         try:
             qr_img = Image.open(qr_path).convert("RGB")
             qr_img = qr_img.resize((FOOTER_QR_SIZE, FOOTER_QR_SIZE), Image.Resampling.LANCZOS)
-            qr_x = (CARD_WIDTH - FOOTER_QR_SIZE) // 2
+            qr_x = (card_width - FOOTER_QR_SIZE) // 2
             canvas.paste(qr_img, (qr_x, footer_top + 28))
         except Exception:
             pass
     prompt_font = _find_chinese_font(22)
     draw.text(
-        (CARD_WIDTH // 2, footer_top + 28 + FOOTER_QR_SIZE + 14),
+        (card_width // 2, footer_top + 28 + FOOTER_QR_SIZE + 14),
         CARD_FOOTER_PROMPT,
         fill=(90, 90, 90),
         font=prompt_font,
