@@ -981,6 +981,9 @@ def render_input_page():
     fingerprint = get_server_fingerprint()
     client_ip = get_client_ip()
 
+    # ===== 调试 =====
+    st.toast(f"DEBUG: fp={fingerprint}, ip={client_ip}, file_exists={os.path.exists(RATE_LIMIT_FILE)}")
+
     # 标题区域
     st.markdown(
         '<p class="main-page-title">✨ Astrose</p>',
