@@ -44,6 +44,20 @@ st.markdown("""
     h1 {
         text-align: center;
         color: #E91E63;
+        font-size: 1.75rem !important;
+    }
+    /* 移动端标题缩小，避免占满屏 */
+    @media (max-width: 640px) {
+        h1 { font-size: 1.35rem !important; line-height: 1.4; }
+    }
+    .result-page-title {
+        text-align: center;
+        color: #E91E63;
+        font-size: 1.5rem !important;
+        margin-bottom: 0.5rem;
+    }
+    @media (max-width: 640px) {
+        .result-page-title { font-size: 1.2rem !important; }
     }
 
     /* 副标题 */
@@ -159,6 +173,13 @@ FOOTER_QR_SIZE = 88
 CARD_FOOTER_LINE1 = "【Astrose-把你们的故事写在星辰里】"
 CARD_FOOTER_QR = "wechat_public_qr.png"   # 公众号二维码，放 assets 目录
 CARD_FOOTER_PROMPT = "【回复：情人节，给你的TA写信/回信】"
+# 情书内文字号（偏大以便移动端阅读）
+POEM_FONT_SIZE = 40
+SIGNATURE_FONT_SIZE = 30
+FOOTER_FONT_SIZE = 18
+PLACEHOLDER_FONT_SIZE = 34
+PLACEHOLDER_SMALL_FONT_SIZE = 28
+SIGNATURE_LINE_SPACING = 38
 
 
 # ============================================================
@@ -181,6 +202,9 @@ if "browser_fp" not in st.session_state:
 
 if "image_request_failed" not in st.session_state:
     st.session_state.image_request_failed = False
+
+if "image_request_error" not in st.session_state:
+    st.session_state.image_request_error = ""  # 画像/贺卡失败时的具体报错，用于展示
 
 if "generation_inputs" not in st.session_state:
     st.session_state.generation_inputs = None  # 用于结果页请求画像工作流
@@ -545,25 +569,24 @@ _FALLBACK_FONT_URL = (
 
 
 def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """查找可用的中文字体，按平台优先尝试；若无则尝试下载缓存，避免贺卡中文乱码"""
+    """查找可用的中文字体；优先使用 assets 内字体（如 演示春风楷.ttf），避免贺卡中文乱码"""
     global _chinese_font_path_cache
-
-    # 优先使用已下载的缓存字体
-    if _chinese_font_path_cache and os.path.exists(_chinese_font_path_cache):
-        try:
-            return ImageFont.truetype(_chinese_font_path_cache, size)
-        except (IOError, OSError):
-            _chinese_font_path_cache = None
 
     # 项目内字体（使用与 app.py 同目录的 assets）；优先使用用户放在 assets 的字体
     assets_dir = APP_DIR / ASSETS_DIR
-    assets = [
-        str(assets_dir / "演示春风楷.ttf"),
-        str(assets_dir / "font.ttf"),
-        str(assets_dir / "font.otf"),
-        str(assets_dir / "NotoSansSC-Regular.otf"),
-        str(assets_dir / "NotoSansSC-Regular.ttf"),
-    ]
+    assets = []
+    if assets_dir.exists():
+        # 先按名字优先：演示春风楷.ttf、font.ttf 等
+        for name in ["演示春风楷.ttf", "font.ttf", "font.otf", "NotoSansSC-Regular.otf", "NotoSansSC-Regular.ttf"]:
+            p = assets_dir / name
+            if p.exists():
+                assets.append(str(p))
+        # 再收集 assets 下其余 .ttf/.otf，避免漏掉其它命名
+        for ext in ("*.ttf", "*.otf"):
+            for p in assets_dir.glob(ext):
+                path_str = str(p)
+                if path_str not in assets:
+                    assets.append(path_str)
     mac_fonts = [
         "/System/Library/Fonts/Hiragino Sans GB.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
@@ -601,6 +624,13 @@ def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFon
             return ImageFont.truetype(font_path, size)
         except (IOError, OSError):
             continue
+
+    # 再试已下载的缓存字体
+    if _chinese_font_path_cache and os.path.exists(_chinese_font_path_cache):
+        try:
+            return ImageFont.truetype(_chinese_font_path_cache, size)
+        except (IOError, OSError):
+            _chinese_font_path_cache = None
 
     # 未找到任何本地字体：尝试下载并缓存
     try:
@@ -682,7 +712,7 @@ def create_valentine_card(
             [(0, 0), (CARD_WIDTH, IMAGE_AREA_HEIGHT)],
             fill=(255, 240, 245)
         )
-        fallback_font = _find_chinese_font(24)
+        fallback_font = _find_chinese_font(PLACEHOLDER_SMALL_FONT_SIZE)
         placeholder_draw.text(
             (CARD_WIDTH // 2, IMAGE_AREA_HEIGHT // 2),
             "画像加载中...",
@@ -692,14 +722,14 @@ def create_valentine_card(
         )
 
     # 诗歌区：留出署名区高度
-    poem_font = _find_chinese_font(30)
+    poem_font = _find_chinese_font(POEM_FONT_SIZE)
     poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
 
     try:
         sample_bbox = poem_font.getbbox("测试Ag")
         single_line_height = sample_bbox[3] - sample_bbox[1]
     except AttributeError:
-        single_line_height = 30
+        single_line_height = POEM_FONT_SIZE
 
     line_spacing = int(single_line_height * 1.5)
     total_poem_height = len(poem_lines) * line_spacing
@@ -721,9 +751,9 @@ def create_valentine_card(
         )
 
     # 署名：to 【TA的名字】 / 落款 【用户的名字】
-    signature_font = _find_chinese_font(22)
+    signature_font = _find_chinese_font(SIGNATURE_FONT_SIZE)
     sig_y1 = SIGNATURE_TOP
-    sig_y2 = SIGNATURE_TOP + 28
+    sig_y2 = SIGNATURE_TOP + SIGNATURE_LINE_SPACING
     if partner_name or my_name:
         if partner_name:
             draw.text(
@@ -743,7 +773,7 @@ def create_valentine_card(
             )
 
     # 底部署名：Astrose 文案 + 公众号二维码 + 提示
-    footer_font = _find_chinese_font(13)
+    footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
     draw.text(
         (CARD_WIDTH // 2, FOOTER_AREA_TOP + 10),
         CARD_FOOTER_LINE1,
@@ -799,7 +829,7 @@ def create_text_only_card(
         [(0, 0), (CARD_WIDTH, IMAGE_AREA_HEIGHT)],
         fill=(255, 240, 245),
     )
-    placeholder_font = _find_chinese_font(28)
+    placeholder_font = _find_chinese_font(PLACEHOLDER_FONT_SIZE)
     draw.text(
         (CARD_WIDTH // 2, IMAGE_AREA_HEIGHT // 2),
         "专属画像生成中…",
@@ -809,14 +839,14 @@ def create_text_only_card(
     )
 
     # 诗歌区：留出署名区高度
-    poem_font = _find_chinese_font(30)
+    poem_font = _find_chinese_font(POEM_FONT_SIZE)
     poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
 
     try:
         sample_bbox = poem_font.getbbox("测试Ag")
         single_line_height = sample_bbox[3] - sample_bbox[1]
     except AttributeError:
-        single_line_height = 30
+        single_line_height = POEM_FONT_SIZE
 
     line_spacing = int(single_line_height * 1.5)
     total_poem_height = len(poem_lines) * line_spacing
@@ -838,9 +868,9 @@ def create_text_only_card(
         )
 
     # 署名：to 【TA的名字】 / 落款 【用户的名字】
-    signature_font = _find_chinese_font(22)
+    signature_font = _find_chinese_font(SIGNATURE_FONT_SIZE)
     sig_y1 = SIGNATURE_TOP
-    sig_y2 = SIGNATURE_TOP + 28
+    sig_y2 = SIGNATURE_TOP + SIGNATURE_LINE_SPACING
     if partner_name or my_name:
         if partner_name:
             draw.text(
@@ -860,7 +890,7 @@ def create_text_only_card(
             )
 
     # 底部署名：Astrose 文案 + 公众号二维码 + 提示
-    footer_font = _find_chinese_font(13)
+    footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
     draw.text(
         (CARD_WIDTH // 2, FOOTER_AREA_TOP + 10),
         CARD_FOOTER_LINE1,
@@ -1048,7 +1078,10 @@ def render_result_page():
     poem = st.session_state.generated_poem
 
     st.balloons()
-    st.markdown("# ✨ 你的专属情书贺卡")
+    st.markdown(
+        '<p class="result-page-title">✨ 你的专属情书贺卡</p>',
+        unsafe_allow_html=True,
+    )
 
     # 1. 纯文字版：有诗就展示并支持下载（含署名 to TA / 落款 用户）
     inputs = st.session_state.generation_inputs
@@ -1077,19 +1110,22 @@ def render_result_page():
                 try:
                     image_url = call_coze_workflow_image(**inputs)
                     st.session_state.generated_image_url = image_url
+                    st.session_state.image_request_error = ""
                     try:
                         st.session_state.card_image = create_valentine_card(
                             image_url, poem, partner_name, my_name
                         )
-                    except Exception:
+                    except Exception as card_e:
                         st.session_state.card_image = None
-                    if fingerprint:
+                        st.session_state.image_request_error = f"贺卡合成失败：{type(card_e).__name__} — {card_e}"
+                    if fingerprint and st.session_state.card_image is not None:
                         _save_last_result(
                             fingerprint, image_url, poem, partner_name, my_name
                         )
                     st.rerun()
-                except Exception:
+                except Exception as e:
                     st.session_state.image_request_failed = True
+                    st.session_state.image_request_error = f"{type(e).__name__}：{e}"
                     st.rerun()
 
     if st.session_state.card_image is not None:
@@ -1107,12 +1143,19 @@ def render_result_page():
         )
     elif poem and st.session_state.generated_image_url is None and st.session_state.image_request_failed:
         st.warning("专属画像生成失败，仅提供纯文字版；可点击「重新生成」再试。")
+        err = st.session_state.get("image_request_error", "").strip()
+        if err:
+            with st.expander("查看失败原因", expanded=True):
+                st.code(err, language=None)
+                st.caption("若为「API未返回有效的图片URL」：请确认扣子工作流返回的 data 为图片链接或含 image_url。")
     elif poem and st.session_state.generated_image_url and st.session_state.card_image is None:
         st.markdown("### 🖼 带头像版")
         try:
             st.image(st.session_state.generated_image_url, use_container_width=True)
-        except Exception:
+        except Exception as img_e:
             st.error("图片加载失败，仅提供纯文字版。")
+            with st.expander("查看失败原因", expanded=False):
+                st.code(f"{type(img_e).__name__}：{img_e}", language=None)
 
     left = get_remaining_count(fingerprint, client_ip)
     st.markdown(
@@ -1123,8 +1166,6 @@ def render_result_page():
     st.markdown("---")
 
     # ----- 引流区域 -----
-    st.markdown("### 🎁 获取更多AI恋爱玩法")
-
     col_left, col_right = st.columns(2)
 
     with col_left:
@@ -1140,32 +1181,15 @@ def render_result_page():
         wechat_qr = os.path.join(ASSETS_DIR, "wechat_qr.png")
         if os.path.exists(wechat_qr):
             st.image(wechat_qr, use_container_width=True)
-        st.markdown(
-            '<p style="text-align:center; color:#E91E63;">加入<strong>AI恋爱助手群</strong></p>',
-            unsafe_allow_html=True,
-        )
 
     with st.expander("❤️ 如果喜欢，请我喝杯咖啡"):
-        pay_left, pay_right = st.columns(2)
-
-        with pay_left:
-            wechat_pay = os.path.join(ASSETS_DIR, "wechat_pay_qr.png")
-            if os.path.exists(wechat_pay):
-                st.image(wechat_pay, use_container_width=True)
-            st.markdown(
-                '<p style="text-align:center; font-size:0.9rem;">微信支付</p>',
-                unsafe_allow_html=True,
-            )
-
-        with pay_right:
-            alipay_qr = os.path.join(ASSETS_DIR, "alipay_qr.png")
-            if os.path.exists(alipay_qr):
-                st.image(alipay_qr, use_container_width=True)
-            st.markdown(
-                '<p style="text-align:center; font-size:0.9rem;">支付宝</p>',
-                unsafe_allow_html=True,
-            )
-
+        wechat_pay = os.path.join(ASSETS_DIR, "wechat_pay_qr.png")
+        if os.path.exists(wechat_pay):
+            st.image(wechat_pay, use_container_width=True)
+        st.markdown(
+            '<p style="text-align:center; font-size:0.9rem;">微信支付</p>',
+            unsafe_allow_html=True,
+        )
         st.markdown(
             '<p style="text-align:center; color:#999; font-size:0.8rem;">任意金额都是鼓励 ☕</p>',
             unsafe_allow_html=True,
@@ -1179,6 +1203,7 @@ def render_result_page():
         st.session_state.generated_image_url = None
         st.session_state.generation_inputs = None
         st.session_state.image_request_failed = False
+        st.session_state.image_request_error = ""
         st.rerun()
 
     st.markdown(
