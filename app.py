@@ -721,7 +721,19 @@ def create_valentine_card(
             anchor="mm",
         )
 
-    # 诗歌区：留出署名区高度
+    # 文字区布局：to xxx → 小诗 → xxx（落款）
+    signature_font = _find_chinese_font(SIGNATURE_FONT_SIZE)
+    y_top = TEXT_AREA_TOP + 28
+    if partner_name:
+        draw.text(
+            (CARD_WIDTH - 60, y_top),
+            f"to 【{partner_name}】",
+            fill=(80, 80, 80),
+            font=signature_font,
+            anchor="rm",
+        )
+    poem_start_y = y_top + SIGNATURE_LINE_SPACING + 20
+
     poem_font = _find_chinese_font(POEM_FONT_SIZE)
     poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
 
@@ -731,15 +743,19 @@ def create_valentine_card(
     except AttributeError:
         single_line_height = POEM_FONT_SIZE
 
-    line_spacing = int(single_line_height * 1.5)
-    total_poem_height = len(poem_lines) * line_spacing
-    poem_area_bottom = SIGNATURE_TOP - 20
-    available_height = poem_area_bottom - TEXT_AREA_TOP
-    start_y = TEXT_AREA_TOP + (available_height - total_poem_height) // 2
-    start_y = max(start_y, TEXT_AREA_TOP + 30)
+    poem_area_bottom = SIGNATURE_TOP - 50
+    available_poem_height = poem_area_bottom - poem_start_y - 10
+    num_lines = len(poem_lines)
+    default_line_spacing = int(single_line_height * 1.5)
+    line_spacing = (
+        (available_poem_height // num_lines)
+        if num_lines > 0 and (num_lines * default_line_spacing > available_poem_height)
+        else default_line_spacing
+    )
+    line_spacing = max(line_spacing, int(single_line_height * 1.1))
 
     for i, line in enumerate(poem_lines):
-        y = start_y + i * line_spacing
+        y = poem_start_y + i * line_spacing
         if y > poem_area_bottom - line_spacing:
             break
         draw.text(
@@ -750,27 +766,14 @@ def create_valentine_card(
             anchor="mt",
         )
 
-    # 署名：to 【TA的名字】 / 落款 【用户的名字】
-    signature_font = _find_chinese_font(SIGNATURE_FONT_SIZE)
-    sig_y1 = SIGNATURE_TOP
-    sig_y2 = SIGNATURE_TOP + SIGNATURE_LINE_SPACING
-    if partner_name or my_name:
-        if partner_name:
-            draw.text(
-                (CARD_WIDTH - 60, sig_y1),
-                f"to 【{partner_name}】",
-                fill=(80, 80, 80),
-                font=signature_font,
-                anchor="rm",
-            )
-        if my_name:
-            draw.text(
-                (CARD_WIDTH - 60, sig_y2),
-                f"落款 【{my_name}】",
-                fill=(80, 80, 80),
-                font=signature_font,
-                anchor="rm",
-            )
+    if my_name:
+        draw.text(
+            (CARD_WIDTH - 60, SIGNATURE_TOP - 18),
+            my_name,
+            fill=(80, 80, 80),
+            font=signature_font,
+            anchor="rm",
+        )
 
     # 底部署名：Astrose 文案 + 公众号二维码 + 提示
     footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
@@ -838,7 +841,19 @@ def create_text_only_card(
         anchor="mm",
     )
 
-    # 诗歌区：留出署名区高度
+    # 文字区布局：to xxx → 小诗 → xxx（落款）
+    signature_font = _find_chinese_font(SIGNATURE_FONT_SIZE)
+    y_top = TEXT_AREA_TOP + 28
+    if partner_name:
+        draw.text(
+            (CARD_WIDTH - 60, y_top),
+            f"to 【{partner_name}】",
+            fill=(80, 80, 80),
+            font=signature_font,
+            anchor="rm",
+        )
+    poem_start_y = y_top + SIGNATURE_LINE_SPACING + 20
+
     poem_font = _find_chinese_font(POEM_FONT_SIZE)
     poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
 
@@ -848,15 +863,19 @@ def create_text_only_card(
     except AttributeError:
         single_line_height = POEM_FONT_SIZE
 
-    line_spacing = int(single_line_height * 1.5)
-    total_poem_height = len(poem_lines) * line_spacing
-    poem_area_bottom = SIGNATURE_TOP - 20
-    available_height = poem_area_bottom - TEXT_AREA_TOP
-    start_y = TEXT_AREA_TOP + (available_height - total_poem_height) // 2
-    start_y = max(start_y, TEXT_AREA_TOP + 30)
+    poem_area_bottom = SIGNATURE_TOP - 50
+    available_poem_height = poem_area_bottom - poem_start_y - 10
+    num_lines = len(poem_lines)
+    default_line_spacing = int(single_line_height * 1.5)
+    line_spacing = (
+        (available_poem_height // num_lines)
+        if num_lines > 0 and (num_lines * default_line_spacing > available_poem_height)
+        else default_line_spacing
+    )
+    line_spacing = max(line_spacing, int(single_line_height * 1.1))
 
     for i, line in enumerate(poem_lines):
-        y = start_y + i * line_spacing
+        y = poem_start_y + i * line_spacing
         if y > poem_area_bottom - line_spacing:
             break
         draw.text(
@@ -867,27 +886,14 @@ def create_text_only_card(
             anchor="mt",
         )
 
-    # 署名：to 【TA的名字】 / 落款 【用户的名字】
-    signature_font = _find_chinese_font(SIGNATURE_FONT_SIZE)
-    sig_y1 = SIGNATURE_TOP
-    sig_y2 = SIGNATURE_TOP + SIGNATURE_LINE_SPACING
-    if partner_name or my_name:
-        if partner_name:
-            draw.text(
-                (CARD_WIDTH - 60, sig_y1),
-                f"to 【{partner_name}】",
-                fill=(80, 80, 80),
-                font=signature_font,
-                anchor="rm",
-            )
-        if my_name:
-            draw.text(
-                (CARD_WIDTH - 60, sig_y2),
-                f"落款 【{my_name}】",
-                fill=(80, 80, 80),
-                font=signature_font,
-                anchor="rm",
-            )
+    if my_name:
+        draw.text(
+            (CARD_WIDTH - 60, SIGNATURE_TOP - 18),
+            my_name,
+            fill=(80, 80, 80),
+            font=signature_font,
+            anchor="rm",
+        )
 
     # 底部署名：Astrose 文案 + 公众号二维码 + 提示
     footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
@@ -1003,7 +1009,7 @@ def render_input_page():
     )
 
     # 生成按钮
-    if st.button("✨ 生成TA的画像", type="primary", use_container_width=True):
+    if st.button("✨ 生成专属情书", type="primary", use_container_width=True):
         if not partner_name or not partner_name.strip():
             st.warning("请填写TA的称呼 ❤️")
             return
@@ -1071,7 +1077,7 @@ def render_input_page():
 # 页面渲染：结果页
 # ============================================================
 def render_result_page():
-    """渲染结果页 - 先展示纯文字贺卡，再在后台生成带头像版"""
+    """渲染结果页 - Tab1：仅文字版和小诗；Tab2：头像+小诗（头像生成后再生成海报）"""
 
     fingerprint = get_browser_fingerprint()
     client_ip = get_client_ip()
@@ -1083,79 +1089,98 @@ def render_result_page():
         unsafe_allow_html=True,
     )
 
-    # 1. 纯文字版：有诗就展示并支持下载（含署名 to TA / 落款 用户）
     inputs = st.session_state.generation_inputs
     partner_name = (inputs.get("partner_name") or "").strip() if inputs else ""
     my_name = (inputs.get("my_name") or "").strip() if inputs else ""
 
-    if poem:
-        st.markdown("### 📝 纯文字版")
-        text_only_buffer = create_text_only_card(poem, partner_name, my_name)
-        text_only_buffer.seek(0)
-        st.image(text_only_buffer, use_container_width=True)
-        text_only_buffer.seek(0)
-        st.download_button(
-            label="💾 保存纯文字版",
-            data=text_only_buffer,
-            file_name="valentine_card_text.png",
-            mime="image/png",
-            use_container_width=True,
-            key="dl_text_only",
-        )
+    tab1, tab2 = st.tabs(["仅文字版和小诗", "头像+小诗"])
 
-    # 2. 带头像版：若尚未生成则请求画像工作流（一直等到成功或失败）
-    if poem and st.session_state.generated_image_url is None and not st.session_state.image_request_failed:
-        if inputs:
-            with st.spinner("正在生成专属画像，请稍候…"):
-                try:
-                    image_url = call_coze_workflow_image(**inputs)
-                    st.session_state.generated_image_url = image_url
-                    st.session_state.image_request_error = ""
+    with tab1:
+        if poem:
+            st.markdown("**小诗**")
+            st.text(poem)
+            st.markdown("---")
+            st.markdown("**纯文字版贺卡**")
+            text_only_buffer = create_text_only_card(poem, partner_name, my_name)
+            text_only_buffer.seek(0)
+            st.image(text_only_buffer, use_container_width=True)
+            text_only_buffer.seek(0)
+            st.download_button(
+                label="💾 保存纯文字版",
+                data=text_only_buffer,
+                file_name="valentine_card_text.png",
+                mime="image/png",
+                use_container_width=True,
+                key="dl_text_only",
+            )
+
+    with tab2:
+        # 若尚未生成画像：先请求画像工作流，成功后再生成海报
+        if poem and st.session_state.generated_image_url is None and not st.session_state.image_request_failed:
+            if inputs:
+                with st.spinner("正在生成专属画像，请稍候…"):
+                    try:
+                        image_url = call_coze_workflow_image(**inputs)
+                        st.session_state.generated_image_url = image_url
+                        st.session_state.image_request_error = ""
+                    except Exception as e:
+                        st.session_state.image_request_failed = True
+                        st.session_state.image_request_error = f"{type(e).__name__}：{e}"
+                        st.rerun()
+                with st.spinner("正在生成海报…"):
                     try:
                         st.session_state.card_image = create_valentine_card(
                             image_url, poem, partner_name, my_name
                         )
+                        if fingerprint:
+                            _save_last_result(
+                                fingerprint, image_url, poem, partner_name, my_name
+                            )
                     except Exception as card_e:
                         st.session_state.card_image = None
                         st.session_state.image_request_error = f"贺卡合成失败：{type(card_e).__name__} — {card_e}"
-                    if fingerprint and st.session_state.card_image is not None:
+                st.rerun()
+
+        if st.session_state.card_image is not None:
+            st.markdown("**头像+小诗 海报**")
+            st.session_state.card_image.seek(0)
+            st.image(st.session_state.card_image, use_container_width=True)
+            st.session_state.card_image.seek(0)
+            st.download_button(
+                label="💾 保存海报",
+                data=st.session_state.card_image,
+                file_name="valentine_card_with_portrait.png",
+                mime="image/png",
+                use_container_width=True,
+                key="dl_with_portrait",
+            )
+        elif poem and st.session_state.generated_image_url is None and st.session_state.image_request_failed:
+            st.warning("专属画像生成失败；可点击「重新生成」再试。")
+            err = st.session_state.get("image_request_error", "").strip()
+            if err:
+                with st.expander("查看失败原因", expanded=True):
+                    st.code(err, language=None)
+        elif poem and st.session_state.generated_image_url and st.session_state.card_image is None:
+            with st.spinner("正在生成海报…"):
+                try:
+                    st.session_state.card_image = create_valentine_card(
+                        st.session_state.generated_image_url, poem, partner_name, my_name
+                    )
+                    if fingerprint:
                         _save_last_result(
-                            fingerprint, image_url, poem, partner_name, my_name
+                            fingerprint,
+                            st.session_state.generated_image_url,
+                            poem,
+                            partner_name,
+                            my_name,
                         )
                     st.rerun()
-                except Exception as e:
-                    st.session_state.image_request_failed = True
-                    st.session_state.image_request_error = f"{type(e).__name__}：{e}"
-                    st.rerun()
-
-    if st.session_state.card_image is not None:
-        st.markdown("### 🖼 带头像版")
-        st.session_state.card_image.seek(0)
-        st.image(st.session_state.card_image, use_container_width=True)
-        st.session_state.card_image.seek(0)
-        st.download_button(
-            label="💾 保存带头像版",
-            data=st.session_state.card_image,
-            file_name="valentine_card_with_portrait.png",
-            mime="image/png",
-            use_container_width=True,
-            key="dl_with_portrait",
-        )
-    elif poem and st.session_state.generated_image_url is None and st.session_state.image_request_failed:
-        st.warning("专属画像生成失败，仅提供纯文字版；可点击「重新生成」再试。")
-        err = st.session_state.get("image_request_error", "").strip()
-        if err:
-            with st.expander("查看失败原因", expanded=True):
-                st.code(err, language=None)
-                st.caption("若为「API未返回有效的图片URL」：请确认扣子工作流返回的 data 为图片链接或含 image_url。")
-    elif poem and st.session_state.generated_image_url and st.session_state.card_image is None:
-        st.markdown("### 🖼 带头像版")
-        try:
-            st.image(st.session_state.generated_image_url, use_container_width=True)
-        except Exception as img_e:
-            st.error("图片加载失败，仅提供纯文字版。")
-            with st.expander("查看失败原因", expanded=False):
-                st.code(f"{type(img_e).__name__}：{img_e}", language=None)
+                except Exception as card_e:
+                    st.session_state.image_request_error = f"贺卡合成失败：{type(card_e).__name__} — {card_e}"
+            if st.session_state.card_image is None and st.session_state.get("image_request_error"):
+                st.error("海报生成失败。")
+                with st.expander("查看失败原因", expanded=False):
+                    st.code(st.session_state.image_request_error, language=None)
 
     left = get_remaining_count(fingerprint, client_ip)
     st.markdown(
