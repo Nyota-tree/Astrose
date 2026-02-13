@@ -9,6 +9,7 @@ import streamlit as st
 import requests
 import json
 import os
+import sys
 import hashlib
 import time
 from datetime import datetime, date
@@ -145,11 +146,16 @@ ASSETS_DIR = "assets"
 
 # 贺卡画布参数
 CARD_WIDTH = 800
-CARD_HEIGHT = 1200
+CARD_HEIGHT = 1280   # 底部留出公众号二维码 + 提示文案
 IMAGE_AREA_HEIGHT = 600
 TEXT_AREA_TOP = 600
 TEXT_AREA_BOTTOM = 1150
+SIGNATURE_TOP = 1070   # 署名区：to TA / 落款 用户
 FOOTER_AREA_TOP = 1150
+FOOTER_QR_SIZE = 88
+CARD_FOOTER_LINE1 = "【Astrose-把你们的故事写在星辰里】"
+CARD_FOOTER_QR = "wechat_public_qr.png"   # 公众号二维码，放 assets 目录
+CARD_FOOTER_PROMPT = "【回复：情人节，给你的TA写信/回信】"
 
 
 # ============================================================
@@ -374,12 +380,23 @@ def _load_last_results() -> dict:
         return default_data
 
 
-def _save_last_result(fingerprint: str, image_url: str, poem: str):
-    """保存该指纹当日最近一次生成结果"""
+def _save_last_result(
+    fingerprint: str,
+    image_url: str,
+    poem: str,
+    partner_name: str = "",
+    my_name: str = "",
+):
+    """保存该指纹当日最近一次生成结果（含署名用 TA 名与用户名）"""
     if not fingerprint:
         return
     data = _load_last_results()
-    data["results"][fingerprint] = {"image_url": image_url, "poem": poem}
+    data["results"][fingerprint] = {
+        "image_url": image_url,
+        "poem": poem,
+        "partner_name": partner_name,
+        "my_name": my_name,
+    }
     try:
         with open(LAST_RESULTS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
@@ -449,7 +466,12 @@ def call_coze_workflow_poem(
     data = result.get("data", {})
     if isinstance(data, str):
         data = json.loads(data)
-    poem = data.get("poem", "")
+    poem = data.get("poem", "") or data.get("text", "") or data.get("content", "")
+    if isinstance(poem, bytes):
+        poem = poem.decode("utf-8", errors="replace")
+    if not isinstance(poem, str):
+        poem = str(poem)
+    poem = poem.strip()
     if not poem:
         raise ValueError("API未返回有效的诗歌文本")
     return poem
@@ -500,8 +522,21 @@ def call_coze_workflow_image(
 # 图片合成：情人节贺卡
 # ============================================================
 def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """查找可用的中文字体，按优先级尝试"""
-    font_candidates = [
+    """查找可用的中文字体，按平台优先尝试，避免贺卡中文乱码"""
+    # 优先使用项目内字体（部署时可在 assets 放置 font.ttf）
+    assets = [
+        str(Path(ASSETS_DIR) / "font.ttf"),
+        str(Path(ASSETS_DIR) / "font.otf"),
+        str(Path(ASSETS_DIR) / "NotoSansSC-Regular.otf"),
+    ]
+    mac_fonts = [
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    ]
+    linux_fonts = [
         "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
         "/usr/share/fonts/noto-cjk/NotoSerifCJK-Regular.ttc",
         "/usr/share/fonts/google-noto-serif-cjk/NotoSerifCJK-Regular.ttc",
@@ -512,13 +547,19 @@ def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFon
         "/usr/share/fonts/opentype/noto/NotoSansSC-Regular.otf",
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/STHeiti Light.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simsun.ttc",
-        "assets/font.ttf",
-        "assets/font.otf",
     ]
+    win_fonts = [
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/msyhbd.ttf",
+        "C:/Windows/Fonts/simsun.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
+    ]
+    if sys.platform == "darwin":
+        font_candidates = assets + mac_fonts + linux_fonts + win_fonts
+    elif sys.platform == "win32":
+        font_candidates = assets + win_fonts + mac_fonts + linux_fonts
+    else:
+        font_candidates = assets + linux_fonts + mac_fonts + win_fonts
 
     for font_path in font_candidates:
         try:
@@ -548,11 +589,16 @@ def _crop_center(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
     return img.crop((left, top, left + target_w, top + target_h))
 
 
-def create_valentine_card(image_url: str, poem_text: str) -> BytesIO:
+def create_valentine_card(
+    image_url: str,
+    poem_text: str,
+    partner_name: str = "",
+    my_name: str = "",
+) -> BytesIO:
     """
     合成情人节贺卡
 
-    画布 800×1200：上半画像，下半诗歌，底部署名
+    画布 800×1200：上半画像，下半诗歌，署名（to TA / 落款 用户），底部署名
     """
     canvas = Image.new("RGB", (CARD_WIDTH, CARD_HEIGHT), (255, 255, 255))
     draw = ImageDraw.Draw(canvas)
@@ -585,7 +631,7 @@ def create_valentine_card(image_url: str, poem_text: str) -> BytesIO:
             anchor="mm",
         )
 
-    # 绘制诗歌
+    # 诗歌区：留出署名区高度
     poem_font = _find_chinese_font(30)
     poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
 
@@ -597,13 +643,14 @@ def create_valentine_card(image_url: str, poem_text: str) -> BytesIO:
 
     line_spacing = int(single_line_height * 1.5)
     total_poem_height = len(poem_lines) * line_spacing
-    available_height = TEXT_AREA_BOTTOM - TEXT_AREA_TOP
+    poem_area_bottom = SIGNATURE_TOP - 20
+    available_height = poem_area_bottom - TEXT_AREA_TOP
     start_y = TEXT_AREA_TOP + (available_height - total_poem_height) // 2
     start_y = max(start_y, TEXT_AREA_TOP + 30)
 
     for i, line in enumerate(poem_lines):
         y = start_y + i * line_spacing
-        if y > TEXT_AREA_BOTTOM - line_spacing:
+        if y > poem_area_bottom - line_spacing:
             break
         draw.text(
             (CARD_WIDTH // 2, y),
@@ -613,11 +660,49 @@ def create_valentine_card(image_url: str, poem_text: str) -> BytesIO:
             anchor="mt",
         )
 
-    # 底部署名
-    footer_font = _find_chinese_font(16)
+    # 署名：to 【TA的名字】 / 落款 【用户的名字】
+    signature_font = _find_chinese_font(22)
+    sig_y1 = SIGNATURE_TOP
+    sig_y2 = SIGNATURE_TOP + 28
+    if partner_name or my_name:
+        if partner_name:
+            draw.text(
+                (CARD_WIDTH - 60, sig_y1),
+                f"to 【{partner_name}】",
+                fill=(80, 80, 80),
+                font=signature_font,
+                anchor="rm",
+            )
+        if my_name:
+            draw.text(
+                (CARD_WIDTH - 60, sig_y2),
+                f"落款 【{my_name}】",
+                fill=(80, 80, 80),
+                font=signature_font,
+                anchor="rm",
+            )
+
+    # 底部署名：Astrose 文案 + 公众号二维码 + 提示
+    footer_font = _find_chinese_font(13)
     draw.text(
-        (CARD_WIDTH // 2, FOOTER_AREA_TOP + 20),
-        "✨ Astrose",
+        (CARD_WIDTH // 2, FOOTER_AREA_TOP + 10),
+        CARD_FOOTER_LINE1,
+        fill=(153, 153, 153),
+        font=footer_font,
+        anchor="mm",
+    )
+    qr_path = Path(ASSETS_DIR) / CARD_FOOTER_QR
+    if qr_path.exists():
+        try:
+            qr_img = Image.open(qr_path).convert("RGB")
+            qr_img = qr_img.resize((FOOTER_QR_SIZE, FOOTER_QR_SIZE), Image.Resampling.LANCZOS)
+            qr_x = (CARD_WIDTH - FOOTER_QR_SIZE) // 2
+            canvas.paste(qr_img, (qr_x, FOOTER_AREA_TOP + 28))
+        except Exception:
+            pass
+    draw.text(
+        (CARD_WIDTH // 2, FOOTER_AREA_TOP + 28 + FOOTER_QR_SIZE + 14),
+        CARD_FOOTER_PROMPT,
         fill=(153, 153, 153),
         font=footer_font,
         anchor="mm",
@@ -629,10 +714,14 @@ def create_valentine_card(image_url: str, poem_text: str) -> BytesIO:
     return buffer
 
 
-def create_text_only_card(poem_text: str) -> BytesIO:
+def create_text_only_card(
+    poem_text: str,
+    partner_name: str = "",
+    my_name: str = "",
+) -> BytesIO:
     """
     合成纯文字版情书贺卡（无画像，上半为占位提示）。
-    画布 800×1200：上半占位区，下半诗歌，底部署名。
+    画布 800×1200：上半占位区，下半诗歌，署名（to TA / 落款 用户），底部署名。
     """
     canvas = Image.new("RGB", (CARD_WIDTH, CARD_HEIGHT), (255, 255, 255))
     draw = ImageDraw.Draw(canvas)
@@ -659,7 +748,7 @@ def create_text_only_card(poem_text: str) -> BytesIO:
         anchor="mm",
     )
 
-    # 绘制诗歌
+    # 诗歌区：留出署名区高度
     poem_font = _find_chinese_font(30)
     poem_lines = [line.strip() for line in poem_text.split("\n") if line.strip()]
 
@@ -671,13 +760,14 @@ def create_text_only_card(poem_text: str) -> BytesIO:
 
     line_spacing = int(single_line_height * 1.5)
     total_poem_height = len(poem_lines) * line_spacing
-    available_height = TEXT_AREA_BOTTOM - TEXT_AREA_TOP
+    poem_area_bottom = SIGNATURE_TOP - 20
+    available_height = poem_area_bottom - TEXT_AREA_TOP
     start_y = TEXT_AREA_TOP + (available_height - total_poem_height) // 2
     start_y = max(start_y, TEXT_AREA_TOP + 30)
 
     for i, line in enumerate(poem_lines):
         y = start_y + i * line_spacing
-        if y > TEXT_AREA_BOTTOM - line_spacing:
+        if y > poem_area_bottom - line_spacing:
             break
         draw.text(
             (CARD_WIDTH // 2, y),
@@ -687,10 +777,49 @@ def create_text_only_card(poem_text: str) -> BytesIO:
             anchor="mt",
         )
 
-    footer_font = _find_chinese_font(16)
+    # 署名：to 【TA的名字】 / 落款 【用户的名字】
+    signature_font = _find_chinese_font(22)
+    sig_y1 = SIGNATURE_TOP
+    sig_y2 = SIGNATURE_TOP + 28
+    if partner_name or my_name:
+        if partner_name:
+            draw.text(
+                (CARD_WIDTH - 60, sig_y1),
+                f"to 【{partner_name}】",
+                fill=(80, 80, 80),
+                font=signature_font,
+                anchor="rm",
+            )
+        if my_name:
+            draw.text(
+                (CARD_WIDTH - 60, sig_y2),
+                f"落款 【{my_name}】",
+                fill=(80, 80, 80),
+                font=signature_font,
+                anchor="rm",
+            )
+
+    # 底部署名：Astrose 文案 + 公众号二维码 + 提示
+    footer_font = _find_chinese_font(13)
     draw.text(
-        (CARD_WIDTH // 2, FOOTER_AREA_TOP + 20),
-        "✨ Astrose",
+        (CARD_WIDTH // 2, FOOTER_AREA_TOP + 10),
+        CARD_FOOTER_LINE1,
+        fill=(153, 153, 153),
+        font=footer_font,
+        anchor="mm",
+    )
+    qr_path = Path(ASSETS_DIR) / CARD_FOOTER_QR
+    if qr_path.exists():
+        try:
+            qr_img = Image.open(qr_path).convert("RGB")
+            qr_img = qr_img.resize((FOOTER_QR_SIZE, FOOTER_QR_SIZE), Image.Resampling.LANCZOS)
+            qr_x = (CARD_WIDTH - FOOTER_QR_SIZE) // 2
+            canvas.paste(qr_img, (qr_x, FOOTER_AREA_TOP + 28))
+        except Exception:
+            pass
+    draw.text(
+        (CARD_WIDTH // 2, FOOTER_AREA_TOP + 28 + FOOTER_QR_SIZE + 14),
+        CARD_FOOTER_PROMPT,
         fill=(153, 153, 153),
         font=footer_font,
         anchor="mm",
@@ -746,13 +875,11 @@ def render_input_page():
     with col_left:
         partner_name = st.text_input(
             "TA的称呼",
-            placeholder="如：小鱼、老公、宝贝",
             key="partner_name_input",
         )
     with col_right:
         my_name = st.text_input(
             "你的称呼",
-            placeholder="如：阿树、你的女朋友",
             key="my_name_input",
         )
 
@@ -765,7 +892,7 @@ def render_input_page():
 
     ta_in_my_eyes = st.text_area(
         "你眼中的Ta",
-        placeholder="如：笑起来有浅浅的梨涡，眼睛很亮…",
+        placeholder="如：漂亮的短发，笑起来有浅浅的梨涡，眼睛很亮",
         height=100,
         key="ta_in_my_eyes_input",
         help="可以描述ta的外表特征或者你心中的ta的形象，用于生成ta的专属画像",
@@ -863,10 +990,14 @@ def render_result_page():
     st.balloons()
     st.markdown("# ✨ 你的专属情书贺卡")
 
-    # 1. 纯文字版：有诗就展示并支持下载
+    # 1. 纯文字版：有诗就展示并支持下载（含署名 to TA / 落款 用户）
+    inputs = st.session_state.generation_inputs
+    partner_name = (inputs.get("partner_name") or "").strip() if inputs else ""
+    my_name = (inputs.get("my_name") or "").strip() if inputs else ""
+
     if poem:
         st.markdown("### 📝 纯文字版")
-        text_only_buffer = create_text_only_card(poem)
+        text_only_buffer = create_text_only_card(poem, partner_name, my_name)
         text_only_buffer.seek(0)
         st.image(text_only_buffer, use_container_width=True)
         text_only_buffer.seek(0)
@@ -881,18 +1012,21 @@ def render_result_page():
 
     # 2. 带头像版：若尚未生成则请求画像工作流（一直等到成功或失败）
     if poem and st.session_state.generated_image_url is None and not st.session_state.image_request_failed:
-        inputs = st.session_state.generation_inputs
         if inputs:
             with st.spinner("正在生成专属画像，请稍候…"):
                 try:
                     image_url = call_coze_workflow_image(**inputs)
                     st.session_state.generated_image_url = image_url
                     try:
-                        st.session_state.card_image = create_valentine_card(image_url, poem)
+                        st.session_state.card_image = create_valentine_card(
+                            image_url, poem, partner_name, my_name
+                        )
                     except Exception:
                         st.session_state.card_image = None
                     if fingerprint:
-                        _save_last_result(fingerprint, image_url, poem)
+                        _save_last_result(
+                            fingerprint, image_url, poem, partner_name, my_name
+                        )
                     st.rerun()
                 except Exception:
                     st.session_state.image_request_failed = True
@@ -1009,12 +1143,16 @@ def main():
         if saved:
             image_url = saved.get("image_url", "")
             poem = saved.get("poem", "")
+            partner_name = saved.get("partner_name", "")
+            my_name = saved.get("my_name", "")
             if image_url and poem:
                 st.session_state.page = "result"
                 st.session_state.generated_image_url = image_url
                 st.session_state.generated_poem = poem
                 try:
-                    st.session_state.card_image = create_valentine_card(image_url, poem)
+                    st.session_state.card_image = create_valentine_card(
+                        image_url, poem, partner_name, my_name
+                    )
                 except Exception:
                     st.session_state.card_image = None
 
