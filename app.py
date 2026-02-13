@@ -16,6 +16,7 @@ from datetime import datetime, date
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
+from streamlit_js_eval import streamlit_js_eval
 
 # 应用根目录（与 app.py 同目录），用于可靠定位 assets
 APP_DIR = Path(__file__).resolve().parent
@@ -215,20 +216,29 @@ if "generation_inputs" not in st.session_state:
 
 
 # ============================================================
-# 服务端指纹：IP + User-Agent 哈希，不依赖 JS
+# 浏览器指纹：localStorage UUID，通过 streamlit_js_eval 同步获取
 # ============================================================
-def get_server_fingerprint() -> str:
+def get_browser_fingerprint() -> str | None:
     """
-    纯服务端指纹：IP + User-Agent 的哈希
-    不依赖 JS，首次加载就能生效
+    通过 streamlit_js_eval 同步获取 localStorage 中的指纹。
+    首次访问时种入 UUID，后续访问直接读取。
+    比 components.v1.html 注入 JS 可靠，因为它是同步阻塞的。
     """
-    ip = get_client_ip()
-    try:
-        ua = st.context.headers.get("User-Agent", "")
-    except Exception:
-        ua = ""
-    raw = f"{ip}:{ua}"
-    return "fp_" + hashlib.sha256(raw.encode()).hexdigest()[:16]
+    fp = streamlit_js_eval(
+        js_expressions="""
+        (function() {
+            const KEY = 'astrose_fp';
+            let fp = localStorage.getItem(KEY);
+            if (!fp) {
+                fp = 'fp_' + crypto.randomUUID();
+                localStorage.setItem(KEY, fp);
+            }
+            return fp;
+        })()
+        """,
+        key="get_fingerprint",
+    )
+    return fp
 
 
 def get_client_ip() -> str:
@@ -307,9 +317,13 @@ def check_rate_limit(fingerprint: str | None, ip: str) -> tuple[bool, str, int]:
 
     返回：(allowed, reason, remaining)
         - allowed:   是否允许生成
-        - reason:    拒绝原因（"total" / "fingerprint" / "ip" / ""）
+        - reason:    拒绝原因（"total" / "fingerprint" / "ip" / "loading" / ""）
         - remaining: 该用户剩余次数
     """
+    # 指纹未就绪时（streamlit_js_eval 首次渲染可能返回 None）不放行
+    if fingerprint is None:
+        return False, "loading", 0
+
     data = _load_rate_data()
 
     # --- 第1层：全局总量 ---
@@ -655,7 +669,7 @@ def _draw_line_with_letter_spacing(
     fill: tuple[int, int, int],
     letter_spacing: int = -2,
 ) -> None:
-    """绘制一行文字，居中，并应用字距（letter_spacing 为负则更紧凑）"""
+    """绘制一行文字，居中，按基线对齐（标点与汉字不会错位），并应用字距"""
     if not line:
         return
     try:
@@ -669,13 +683,22 @@ def _draw_line_with_letter_spacing(
         total_w = bbox[2] - bbox[0]
         letter_spacing = 0
     x = x_center - total_w // 2
+    # 用首字底线作为整行基线，避免句号、引号等标点垂直错位
+    try:
+        first_bbox = font.getbbox(line[0])
+        baseline = y + first_bbox[3]
+    except (TypeError, AttributeError):
+        baseline = y
     for c in line:
         try:
             bbox = font.getbbox(c)
             cw = bbox[2] - bbox[0]
+            height = bbox[3] - bbox[1]
+            draw_y = baseline - height  # 按基线对齐：每字底线落在同一 baseline
         except (TypeError, AttributeError):
             cw = 0
-        draw.text((x, y), c, fill=fill, font=font, anchor="lt")
+            draw_y = baseline
+        draw.text((x, draw_y), c, fill=fill, font=font, anchor="lt")
         x += cw + letter_spacing
 
 
@@ -720,8 +743,8 @@ def create_valentine_card(
     except AttributeError:
         single_line_height = POEM_FONT_SIZE
 
-    line_spacing = int(single_line_height * 1.5)
-    line_spacing = max(line_spacing, int(single_line_height * 1.1))
+    line_spacing = int(single_line_height * 1.9)  # 行间距大一点
+    line_spacing = max(line_spacing, int(single_line_height * 1.3))
 
     # 2. 动态计算各区域高度（空行也占一行高度）
     poem_area_padding = 80  # 诗歌区上下留白
@@ -775,7 +798,7 @@ def create_valentine_card(
     if partner_name:
         draw.text(
             (card_width // 2, y_top),
-            f"to 【{partner_name}】",
+            f"to {partner_name}",
             fill=(80, 80, 80),
             font=signature_font,
             anchor="mm",
@@ -785,13 +808,13 @@ def create_valentine_card(
     poem_area_bottom = text_area_bottom - 50
     available_poem_height = poem_area_bottom - poem_start_y - 10
     num_lines = len(poem_lines)
-    default_line_spacing = int(single_line_height * 1.5)
+    default_line_spacing = int(single_line_height * 1.9)
     actual_line_spacing = (
         (available_poem_height // num_lines)
         if num_lines > 0 and (num_lines * default_line_spacing > available_poem_height)
         else line_spacing
     )
-    actual_line_spacing = max(actual_line_spacing, int(single_line_height * 1.1))
+    actual_line_spacing = max(actual_line_spacing, int(single_line_height * 1.3))
 
     for i, line in enumerate(poem_lines):
         y = poem_start_y + i * actual_line_spacing
@@ -799,7 +822,7 @@ def create_valentine_card(
             break
         if line:  # 空行不画字，只占行高，形成段落间空行
             _draw_line_with_letter_spacing(
-                draw, card_width // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
+                draw, card_width // 2, y, line, poem_font, (51, 51, 51), letter_spacing=4
             )
 
     if my_name:
@@ -865,8 +888,8 @@ def create_text_only_card(
     except AttributeError:
         single_line_height = POEM_FONT_SIZE
 
-    line_spacing = int(single_line_height * 1.5)
-    line_spacing = max(line_spacing, int(single_line_height * 1.1))
+    line_spacing = int(single_line_height * 1.9)  # 行间距大一点
+    line_spacing = max(line_spacing, int(single_line_height * 1.3))
 
     # 2. 动态计算各区域高度（空行也占一行高度）
     top_padding = 50  # 顶部留白
@@ -901,7 +924,7 @@ def create_text_only_card(
     if partner_name:
         draw.text(
             (CARD_WIDTH // 2, y_top),
-            f"to 【{partner_name}】",
+            f"to {partner_name}",
             fill=(80, 80, 80),
             font=signature_font,
             anchor="mm",
@@ -911,13 +934,13 @@ def create_text_only_card(
     poem_area_bottom = text_area_bottom - 50
     available_poem_height = poem_area_bottom - poem_start_y - 10
     num_lines = len(poem_lines)
-    default_line_spacing = int(single_line_height * 1.5)
+    default_line_spacing = int(single_line_height * 1.9)
     actual_line_spacing = (
         (available_poem_height // num_lines)
         if num_lines > 0 and (num_lines * default_line_spacing > available_poem_height)
         else line_spacing
     )
-    actual_line_spacing = max(actual_line_spacing, int(single_line_height * 1.1))
+    actual_line_spacing = max(actual_line_spacing, int(single_line_height * 1.3))
 
     for i, line in enumerate(poem_lines):
         y = poem_start_y + i * actual_line_spacing
@@ -925,7 +948,7 @@ def create_text_only_card(
             break
         if line:  # 空行不画字，只占行高，形成段落间空行
             _draw_line_with_letter_spacing(
-                draw, CARD_WIDTH // 2, y, line, poem_font, (51, 51, 51), letter_spacing=-2
+                draw, CARD_WIDTH // 2, y, line, poem_font, (51, 51, 51), letter_spacing=4
             )
 
     if my_name:
@@ -978,7 +1001,7 @@ def render_input_page():
     """渲染首页 - 情书输入界面"""
 
     # 获取用户身份标识
-    fingerprint = get_server_fingerprint()
+    fingerprint = get_browser_fingerprint()
     client_ip = get_client_ip()
 
     # ===== 调试 =====
@@ -996,7 +1019,9 @@ def render_input_page():
     allowed, reason, remaining = check_rate_limit(fingerprint, client_ip)
 
     if not allowed:
-        if reason == "total":
+        if reason == "loading":
+            st.warning("页面加载中，请稍后刷新再试 ❤️")
+        elif reason == "total":
             st.markdown("""
             <div class="limit-box">
                 <h3>❌ 今天的免费额度已用完 🥹</h3>
@@ -1083,9 +1108,15 @@ def render_input_page():
             return
 
         # ⚠️ 点击时再次校验（防止页面停留期间额度耗尽）
+        if not fingerprint:
+            st.warning("页面加载中，请稍后再点 ❤️")
+            return
         allowed2, reason2, _ = check_rate_limit(fingerprint, client_ip)
         if not allowed2:
-            st.error("次数已用完，请明天再来 🥹")
+            if reason2 == "loading":
+                st.warning("页面加载中，请稍后再点 ❤️")
+            else:
+                st.error("次数已用完，请明天再来 🥹")
             return
 
         with st.spinner("正在为你创作小诗... ✨"):
@@ -1142,7 +1173,7 @@ def render_input_page():
 def render_result_page():
     """渲染结果页 - Tab1：仅文字版和小诗；Tab2：头像+小诗（头像生成后再生成海报）"""
 
-    fingerprint = get_server_fingerprint()
+    fingerprint = get_browser_fingerprint()
     client_ip = get_client_ip()
     poem = st.session_state.generated_poem
 
@@ -1319,7 +1350,7 @@ def render_result_page():
 # ============================================================
 def main():
     # 同用户再进或刷新时：若有当日持久化结果则恢复为结果页；刚点击「重新生成」或刚点击「生成」时不再用持久化覆盖
-    fingerprint = get_server_fingerprint()
+    fingerprint = get_browser_fingerprint()
     if st.session_state.pop("returning_from_regenerate", False):
         pass  # 本次是点击重新生成返回，不恢复旧结果页
     elif st.session_state.pop("just_generated", False):
