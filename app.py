@@ -720,7 +720,7 @@ def create_valentine_card(
     poem_area_height = len(poem_lines) * line_spacing + poem_area_padding
     poem_area_height = max(poem_area_height, 300)  # 最小 300
     signature_area_height = 100  # 署名区 to xxx / 落款
-    footer_area_height = 55 + FOOTER_QR_SIZE + 14 + 28 + 8 + 28  # Astrose 文案(大号)+二维码+两行钩子
+    footer_area_height = 10 + FOOTER_QR_SIZE + 14 + 48 + 12 + 28 + 8 + 28  # 二维码+Astrose 文案(下)+两行钩子
 
     total_height = image_area_height + poem_area_height + signature_area_height + footer_area_height
 
@@ -802,17 +802,9 @@ def create_valentine_card(
             anchor="mm",
         )
 
-    # 底部：Astrose 文案(与小诗同字号) + 公众号二维码 + 两行钩子
-    footer_line_font = _find_chinese_font(POEM_FONT_SIZE)
-    draw.text(
-        (card_width // 2, footer_top + 24),
-        CARD_FOOTER_LINE1,
-        fill=(153, 153, 153),
-        font=footer_line_font,
-        anchor="mm",
-    )
+    # 底部：公众号二维码 → Astrose 文案(与小诗同字号) → 两行钩子
     qr_path = Path(ASSETS_DIR) / CARD_FOOTER_QR
-    qr_y = footer_top + 55
+    qr_y = footer_top + 10
     if qr_path.exists():
         try:
             qr_img = Image.open(qr_path).convert("RGB")
@@ -821,8 +813,17 @@ def create_valentine_card(
             canvas.paste(qr_img, (qr_x, qr_y))
         except Exception:
             pass
+    footer_line_font = _find_chinese_font(POEM_FONT_SIZE)
+    astrose_y = qr_y + FOOTER_QR_SIZE + 14
+    draw.text(
+        (card_width // 2, astrose_y + 24),
+        CARD_FOOTER_LINE1,
+        fill=(153, 153, 153),
+        font=footer_line_font,
+        anchor="mm",
+    )
     prompt_font = _find_chinese_font(22)
-    prompt_y = qr_y + FOOTER_QR_SIZE + 14
+    prompt_y = astrose_y + 48 + 12
     draw.text(
         (card_width // 2, prompt_y),
         CARD_FOOTER_PROMPT_LINE1,
@@ -873,7 +874,7 @@ def create_text_only_card(
     poem_area_height = len(poem_lines) * line_spacing + poem_area_padding
     poem_area_height = max(poem_area_height, 300)
     signature_area_height = 100
-    footer_area_height = 55 + FOOTER_QR_SIZE + 14 + 28 + 8 + 28  # Astrose 文案(大号)+二维码+两行钩子
+    footer_area_height = 10 + FOOTER_QR_SIZE + 14 + 48 + 12 + 28 + 8 + 28  # 二维码+Astrose 文案(下)+两行钩子
 
     total_height = top_padding + header_height + poem_area_height + signature_area_height + footer_area_height
 
@@ -934,17 +935,9 @@ def create_text_only_card(
             anchor="mm",
         )
 
-    # 底部：Astrose 文案(与小诗同字号) + 公众号二维码 + 两行钩子
-    footer_line_font = _find_chinese_font(POEM_FONT_SIZE)
-    draw.text(
-        (CARD_WIDTH // 2, footer_top + 24),
-        CARD_FOOTER_LINE1,
-        fill=(153, 153, 153),
-        font=footer_line_font,
-        anchor="mm",
-    )
+    # 底部：公众号二维码 → Astrose 文案(与小诗同字号) → 两行钩子
     qr_path = Path(ASSETS_DIR) / CARD_FOOTER_QR
-    qr_y = footer_top + 55
+    qr_y = footer_top + 10
     if qr_path.exists():
         try:
             qr_img = Image.open(qr_path).convert("RGB")
@@ -953,8 +946,17 @@ def create_text_only_card(
             canvas.paste(qr_img, (qr_x, qr_y))
         except Exception:
             pass
+    footer_line_font = _find_chinese_font(POEM_FONT_SIZE)
+    astrose_y = qr_y + FOOTER_QR_SIZE + 14
+    draw.text(
+        (CARD_WIDTH // 2, astrose_y + 24),
+        CARD_FOOTER_LINE1,
+        fill=(153, 153, 153),
+        font=footer_line_font,
+        anchor="mm",
+    )
     prompt_font = _find_chinese_font(22)
-    prompt_y = qr_y + FOOTER_QR_SIZE + 14
+    prompt_y = astrose_y + 48 + 12
     draw.text(
         (CARD_WIDTH // 2, prompt_y),
         CARD_FOOTER_PROMPT_LINE1,
