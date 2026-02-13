@@ -17,6 +17,9 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 
+# 应用根目录（与 app.py 同目录），用于可靠定位 assets
+APP_DIR = Path(__file__).resolve().parent
+
 # ============================================================
 # 页面基础配置
 # ============================================================
@@ -510,9 +513,19 @@ def call_coze_workflow_image(
     response.raise_for_status()
     result = response.json()
     data = result.get("data", {})
+    image_url = ""
     if isinstance(data, str):
-        data = json.loads(data)
-    image_url = data.get("image_url", "")
+        # 扣子有时直接返回 data 为图片 URL 字符串
+        if data.strip().startswith(("http://", "https://")):
+            image_url = data.strip()
+        else:
+            try:
+                data = json.loads(data)
+                image_url = data.get("image_url", "")
+            except (json.JSONDecodeError, TypeError):
+                pass
+    else:
+        image_url = data.get("image_url", "")
     if not image_url:
         raise ValueError("API未返回有效的图片URL")
     return image_url
@@ -521,13 +534,35 @@ def call_coze_workflow_image(
 # ============================================================
 # 图片合成：情人节贺卡
 # ============================================================
+# 运行时下载的中文字体缓存路径（未找到系统/项目字体时使用）
+_chinese_font_path_cache: str | None = None
+
+# 可选：未找到字体时从此 URL 下载并缓存（Noto Sans SC，SIL 开源）
+_FALLBACK_FONT_URL = (
+    "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.0.0/files/"
+    "noto-sans-sc-chinese-simplified-400-normal.ttf"
+)
+
+
 def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """查找可用的中文字体，按平台优先尝试，避免贺卡中文乱码"""
-    # 优先使用项目内字体（部署时可在 assets 放置 font.ttf）
+    """查找可用的中文字体，按平台优先尝试；若无则尝试下载缓存，避免贺卡中文乱码"""
+    global _chinese_font_path_cache
+
+    # 优先使用已下载的缓存字体
+    if _chinese_font_path_cache and os.path.exists(_chinese_font_path_cache):
+        try:
+            return ImageFont.truetype(_chinese_font_path_cache, size)
+        except (IOError, OSError):
+            _chinese_font_path_cache = None
+
+    # 项目内字体（使用与 app.py 同目录的 assets）；优先使用用户放在 assets 的字体
+    assets_dir = APP_DIR / ASSETS_DIR
     assets = [
-        str(Path(ASSETS_DIR) / "font.ttf"),
-        str(Path(ASSETS_DIR) / "font.otf"),
-        str(Path(ASSETS_DIR) / "NotoSansSC-Regular.otf"),
+        str(assets_dir / "演示春风楷.ttf"),
+        str(assets_dir / "font.ttf"),
+        str(assets_dir / "font.otf"),
+        str(assets_dir / "NotoSansSC-Regular.otf"),
+        str(assets_dir / "NotoSansSC-Regular.ttf"),
     ]
     mac_fonts = [
         "/System/Library/Fonts/Hiragino Sans GB.ttc",
@@ -566,6 +601,31 @@ def _find_chinese_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFon
             return ImageFont.truetype(font_path, size)
         except (IOError, OSError):
             continue
+
+    # 未找到任何本地字体：尝试下载并缓存
+    try:
+        resp = requests.get(_FALLBACK_FONT_URL, timeout=15)
+        resp.raise_for_status()
+        font_data = resp.content
+        if len(font_data) < 1000:
+            raise ValueError("下载的字体文件过小")
+        # 优先写入项目 assets，便于持久使用；若不可写则写临时目录
+        for base in [assets_dir, Path(os.environ.get("TMPDIR", "/tmp"))]:
+            base = Path(base)
+            if not base.exists() and base != assets_dir:
+                continue
+            try:
+                if base == assets_dir and not base.exists():
+                    base.mkdir(parents=True, exist_ok=True)
+                target = base / "astrose_cjk_font.ttf"
+                with open(target, "wb") as f:
+                    f.write(font_data)
+                _chinese_font_path_cache = str(target)
+                return ImageFont.truetype(_chinese_font_path_cache, size)
+            except (IOError, OSError):
+                continue
+    except Exception:
+        pass
 
     print("⚠️ 未找到中文字体，使用默认字体（中文可能显示异常）")
     return ImageFont.load_default()
