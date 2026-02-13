@@ -173,10 +173,11 @@ TEXT_AREA_TOP = 600
 TEXT_AREA_BOTTOM = 1150
 SIGNATURE_TOP = 1070   # 署名区：to TA / 落款 用户
 FOOTER_AREA_TOP = 1150
-FOOTER_QR_SIZE = 88
-CARD_FOOTER_LINE1 = "【Astrose-把你们的故事写在星辰里】"
+FOOTER_QR_SIZE = 120  # 公众号二维码边长
+CARD_FOOTER_LINE1 = "Astrose：把你们的故事写在星辰里"
 CARD_FOOTER_QR = "wechat_public_qr.png"   # 公众号二维码，放 assets 目录
-CARD_FOOTER_PROMPT = "【回复：情人节，给你的TA写信/回信】"
+CARD_FOOTER_PROMPT_LINE1 = "关注公众号，并回复：情人节"
+CARD_FOOTER_PROMPT_LINE2 = "给你的TA回信/写信"
 # 情书内文字号（偏大以便移动端阅读）
 POEM_FONT_SIZE = 40
 SIGNATURE_FONT_SIZE = 30
@@ -719,7 +720,7 @@ def create_valentine_card(
     poem_area_height = len(poem_lines) * line_spacing + poem_area_padding
     poem_area_height = max(poem_area_height, 300)  # 最小 300
     signature_area_height = 100  # 署名区 to xxx / 落款
-    footer_area_height = 28 + FOOTER_QR_SIZE + 14 + 28 + 20  # 文案+二维码+提示，约 178
+    footer_area_height = 55 + FOOTER_QR_SIZE + 14 + 28 + 8 + 28  # Astrose 文案(大号)+二维码+两行钩子
 
     total_height = image_area_height + poem_area_height + signature_area_height + footer_area_height
 
@@ -801,28 +802,37 @@ def create_valentine_card(
             anchor="mm",
         )
 
-    # 底部：Astrose 文案 + 公众号二维码 + 提示
-    footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
+    # 底部：Astrose 文案(与小诗同字号) + 公众号二维码 + 两行钩子
+    footer_line_font = _find_chinese_font(POEM_FONT_SIZE)
     draw.text(
-        (card_width // 2, footer_top + 10),
+        (card_width // 2, footer_top + 24),
         CARD_FOOTER_LINE1,
         fill=(153, 153, 153),
-        font=footer_font,
+        font=footer_line_font,
         anchor="mm",
     )
     qr_path = Path(ASSETS_DIR) / CARD_FOOTER_QR
+    qr_y = footer_top + 55
     if qr_path.exists():
         try:
             qr_img = Image.open(qr_path).convert("RGB")
             qr_img = qr_img.resize((FOOTER_QR_SIZE, FOOTER_QR_SIZE), Image.Resampling.LANCZOS)
             qr_x = (card_width - FOOTER_QR_SIZE) // 2
-            canvas.paste(qr_img, (qr_x, footer_top + 28))
+            canvas.paste(qr_img, (qr_x, qr_y))
         except Exception:
             pass
     prompt_font = _find_chinese_font(22)
+    prompt_y = qr_y + FOOTER_QR_SIZE + 14
     draw.text(
-        (card_width // 2, footer_top + 28 + FOOTER_QR_SIZE + 14),
-        CARD_FOOTER_PROMPT,
+        (card_width // 2, prompt_y),
+        CARD_FOOTER_PROMPT_LINE1,
+        fill=(90, 90, 90),
+        font=prompt_font,
+        anchor="mm",
+    )
+    draw.text(
+        (card_width // 2, prompt_y + 28),
+        CARD_FOOTER_PROMPT_LINE2,
         fill=(90, 90, 90),
         font=prompt_font,
         anchor="mm",
@@ -863,7 +873,7 @@ def create_text_only_card(
     poem_area_height = len(poem_lines) * line_spacing + poem_area_padding
     poem_area_height = max(poem_area_height, 300)
     signature_area_height = 100
-    footer_area_height = 28 + FOOTER_QR_SIZE + 14 + 28 + 20
+    footer_area_height = 55 + FOOTER_QR_SIZE + 14 + 28 + 8 + 28  # Astrose 文案(大号)+二维码+两行钩子
 
     total_height = top_padding + header_height + poem_area_height + signature_area_height + footer_area_height
 
@@ -924,28 +934,37 @@ def create_text_only_card(
             anchor="mm",
         )
 
-    # 底部：Astrose 文案 + 公众号二维码 + 提示
-    footer_font = _find_chinese_font(FOOTER_FONT_SIZE)
+    # 底部：Astrose 文案(与小诗同字号) + 公众号二维码 + 两行钩子
+    footer_line_font = _find_chinese_font(POEM_FONT_SIZE)
     draw.text(
-        (CARD_WIDTH // 2, footer_top + 10),
+        (CARD_WIDTH // 2, footer_top + 24),
         CARD_FOOTER_LINE1,
         fill=(153, 153, 153),
-        font=footer_font,
+        font=footer_line_font,
         anchor="mm",
     )
     qr_path = Path(ASSETS_DIR) / CARD_FOOTER_QR
+    qr_y = footer_top + 55
     if qr_path.exists():
         try:
             qr_img = Image.open(qr_path).convert("RGB")
             qr_img = qr_img.resize((FOOTER_QR_SIZE, FOOTER_QR_SIZE), Image.Resampling.LANCZOS)
             qr_x = (CARD_WIDTH - FOOTER_QR_SIZE) // 2
-            canvas.paste(qr_img, (qr_x, footer_top + 28))
+            canvas.paste(qr_img, (qr_x, qr_y))
         except Exception:
             pass
     prompt_font = _find_chinese_font(22)
+    prompt_y = qr_y + FOOTER_QR_SIZE + 14
     draw.text(
-        (CARD_WIDTH // 2, footer_top + 28 + FOOTER_QR_SIZE + 14),
-        CARD_FOOTER_PROMPT,
+        (CARD_WIDTH // 2, prompt_y),
+        CARD_FOOTER_PROMPT_LINE1,
+        fill=(90, 90, 90),
+        font=prompt_font,
+        anchor="mm",
+    )
+    draw.text(
+        (CARD_WIDTH // 2, prompt_y + 28),
+        CARD_FOOTER_PROMPT_LINE2,
         fill=(90, 90, 90),
         font=prompt_font,
         anchor="mm",
